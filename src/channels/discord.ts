@@ -67,6 +67,16 @@ export class DiscordChannel implements Channel {
       });
 
       this.client.on(Events.MessageCreate, (message: Message) => {
+        logger.debug(
+          {
+            author: message.author.tag,
+            bot: message.author.bot,
+            channelId: message.channelId,
+            guild: message.guild?.name,
+            content: message.content.slice(0, 100),
+          },
+          'Discord messageCreate event',
+        );
         this.handleMessage(message);
       });
 
