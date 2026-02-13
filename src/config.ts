@@ -49,6 +49,11 @@ export const TRIGGER_PATTERN = new RegExp(
   'i',
 );
 
+// Discord configuration
+export const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN || '';
+export const DISCORD_ADMIN_CHANNEL_ID =
+  process.env.DISCORD_ADMIN_CHANNEL_ID || '';
+
 // Timezone for scheduled tasks (cron expressions, etc.)
 // Uses system timezone by default
 export const TIMEZONE =
