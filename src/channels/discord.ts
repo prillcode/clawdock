@@ -169,7 +169,9 @@ export class DiscordChannel implements Channel {
     const channelId = message.channelId;
     const timestamp = message.createdAt.toISOString();
     const channelName =
-      'name' in message.channel ? (message.channel as TextChannel).name : channelId;
+      'name' in message.channel
+        ? (message.channel as TextChannel).name
+        : channelId;
 
     this.opts.onChatMetadata(channelId, timestamp, channelName);
 
@@ -178,23 +180,17 @@ export class DiscordChannel implements Channel {
 
     // Replace Discord bot mention with @ASSISTANT_NAME so TRIGGER_PATTERN matches
     let content = message.content;
-    const botMentionPattern = new RegExp(
-      `<@!?${this.client.user!.id}>`,
-      'g',
-    );
-    const isMentioned = botMentionPattern.test(content);
-    if (isMentioned) {
-      content = content
-        .replace(botMentionPattern, `@${ASSISTANT_NAME}`)
-        .trim();
+    const botMentionPattern = new RegExp(`<@!?${this.client.user!.id}>`, 'g');
+    const replaced = content.replace(botMentionPattern, `@${ASSISTANT_NAME}`);
+    if (replaced !== content) {
+      content = replaced.trim();
     }
 
     this.opts.onMessage(channelId, {
       id: message.id,
       chat_jid: channelId,
       sender: message.author.id,
-      sender_name:
-        message.member?.displayName || message.author.username,
+      sender_name: message.member?.displayName || message.author.username,
       content,
       timestamp,
       is_from_me: false,
