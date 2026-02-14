@@ -30,6 +30,11 @@ export interface AllowedRoot {
 export interface ContainerConfig {
   additionalMounts?: AdditionalMount[];
   timeout?: number; // Default: 300000 (5 minutes)
+  // Agent SDK query options
+  model?: string; // Claude model ID (e.g., 'claude-sonnet-4-20250514')
+  maxBudgetUsd?: number; // Maximum budget in USD per query
+  maxTurns?: number; // Maximum conversation turns per query
+  maxThinkingTokens?: number; // Maximum thinking tokens for reasoning
 }
 
 export interface RegisteredGroup {
@@ -98,4 +103,8 @@ export type OnInboundMessage = (chatJid: string, message: NewMessage) => void;
 // Callback for chat metadata discovery.
 // name is optional — channels that deliver names inline (Telegram) pass it here;
 // channels that sync names separately (WhatsApp syncGroupMetadata) omit it.
-export type OnChatMetadata = (chatJid: string, timestamp: string, name?: string) => void;
+export type OnChatMetadata = (
+  chatJid: string,
+  timestamp: string,
+  name?: string,
+) => void;
