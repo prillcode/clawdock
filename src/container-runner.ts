@@ -194,6 +194,9 @@ function buildVolumeMounts(
 
     // When a provider override is active, use its auth token instead of OAuth
     // Also forward any model mapping overrides (e.g., ANTHROPIC_DEFAULT_OPUS_MODEL=glm-5)
+    // Shared vars forwarded to all containers regardless of auth method
+    const sharedVars = ['GH_TOKEN'];
+
     const allowedVars = hasProviderOverride
       ? [
           'ANTHROPIC_BASE_URL',
@@ -203,8 +206,9 @@ function buildVolumeMounts(
           'ANTHROPIC_DEFAULT_OPUS_MODEL',
           'ANTHROPIC_DEFAULT_SONNET_MODEL',
           'ANTHROPIC_DEFAULT_HAIKU_MODEL',
+          ...sharedVars,
         ]
-      : ['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY'];
+      : ['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY', ...sharedVars];
 
     const filteredLines = envContent.split('\n').filter((line) => {
       const trimmed = line.trim();
