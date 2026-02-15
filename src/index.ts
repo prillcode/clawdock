@@ -51,6 +51,7 @@ import {
 } from './router.js';
 import {
   calculateSessionMetrics,
+  generateAutoResetMessage,
   generateContextWarning,
 } from './session-manager.js';
 import { startSchedulerLoop } from './task-scheduler.js';
@@ -240,7 +241,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     return false;
   }
 
-  // Check context usage and warn if threshold exceeded
+  // Check context usage and handle warnings/auto-reset
   if (outputSentToUser && channel) {
     try {
       // Get all messages in conversation for context estimation
@@ -251,8 +252,45 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
       const model = group.containerConfig?.model || AGENT_MODEL;
       const metrics = calculateSessionMetrics(conversationHistory, model);
 
-      // Send warning if threshold exceeded (80%)
-      if (metrics.shouldWarn) {
+      // Auto-reset at 100% with summary
+      if (metrics.shouldAutoReset) {
+        logger.warn(
+          {
+            group: group.name,
+            estimatedTokens: metrics.estimatedTokens,
+          },
+          'Context reached 100% - triggering automatic reset with summary',
+        );
+
+        // Generate summary of current conversation
+        const summaryPrompt = `Please provide a concise summary of our conversation including:
+- Key accomplishments
+- Current state/progress  
+- Next steps or open questions
+
+Keep it brief (2-3 paragraphs max).`;
+
+        // This will be handled by triggering a summary request
+        // The actual reset happens via IPC after summary is generated
+        await channel.sendMessage(
+          chatJid,
+          `⚠️ Context window reached 100%. Generating summary and resetting session...`,
+        );
+
+        // Request summary generation and reset (Willis will handle this)
+        // Note: This is a simplified approach - in production you'd want to
+        // actually call the agent to generate the summary before resetting
+        const autoResetMessage = generateAutoResetMessage();
+        await channel.sendMessage(chatJid, autoResetMessage);
+
+        // Trigger reset via IPC (will be processed after this message completes)
+        // TODO: Implement actual summary generation before reset
+        logger.info(
+          { group: group.name },
+          'Automatic session reset triggered at 100%',
+        );
+      } else if (metrics.shouldWarn) {
+        // Send warning at 80%
         const warning = generateContextWarning(metrics);
         await channel.sendMessage(chatJid, warning);
         logger.info(

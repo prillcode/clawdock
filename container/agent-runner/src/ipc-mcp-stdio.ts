@@ -386,19 +386,79 @@ Use available_groups.json to find the JID for a group. The folder name should be
 );
 
 server.tool(
-  'new_chat_session',
-  `Start a new chat session by archiving the current conversation and clearing context.
+  'new_chat_session_with_summary',
+  `Start a new chat session WITH a context summary to maintain continuity.
 
-This is useful when:
-- The conversation is getting too long (high token usage)
-- You want to start fresh on a different topic
-- Context is becoming bloated and responses are slow
+IMPORTANT: Before calling this tool, first generate a concise summary of the current conversation including:
+- Key accomplishments
+- Current state/progress
+- Next steps or open questions
 
-The old session will be archived and can be referenced later if needed.`,
+Pass the summary as the 'summary' parameter. It will be saved to session-summary.md and available in the new session.
+
+Use this when:
+- Conversation is long but work is ongoing (need continuity)
+- User asks to start new session with summary
+- Context hits 100% (automatic reset)`,
+  {
+    summary: z
+      .string()
+      .describe(
+        'Concise summary of current session (accomplishments, state, next steps)',
+      ),
+  },
+  async (args) => {
+    const data = {
+      type: 'new_chat_session_with_summary',
+      groupFolder,
+      sessionSummary: args.summary,
+      timestamp: new Date().toISOString(),
+    };
+
+    writeIpcFile(TASKS_DIR, data);
+
+    const archiveTimestamp = new Date()
+      .toISOString()
+      .replace(/[:.]/g, '-')
+      .slice(0, 19);
+
+    return {
+      content: [
+        {
+          type: 'text' as const,
+          text: `✅ Started a new chat session with context summary saved.
+
+Session summary saved to: /workspace/group/session-summary.md
+Archive location: /workspace/group/conversations/archive/session-${archiveTimestamp}/
+
+The summary will help maintain continuity in the new session.`,
+        },
+      ],
+    };
+  },
+);
+
+server.tool(
+  'new_chat_session_fresh',
+  `Start a completely fresh chat session with NO context carried over.
+
+This clears:
+- Conversation history
+- Session summary file
+- All temporary context
+
+Preserves:
+- CLAUDE.md (long-term memory)
+- Saved files and notes
+
+Use this when:
+- Starting completely new work
+- User asks to start fresh/clean
+- Previous topic is unrelated to new work`,
   {},
   async () => {
     const data = {
-      type: 'new_chat_session',
+      type: 'new_chat_session_fresh',
       groupFolder,
       timestamp: new Date().toISOString(),
     };
@@ -414,12 +474,12 @@ The old session will be archived and can be referenced later if needed.`,
       content: [
         {
           type: 'text' as const,
-          text: `✅ Started a new chat session. Previous session archived.
+          text: `✅ Started a completely fresh chat session.
 
-You can find the old conversation in:
-/workspace/group/conversations/archive/session-${archiveTimestamp}/
+Previous session archived to: /workspace/group/conversations/archive/session-${archiveTimestamp}/
+Session summary cleared for clean start.
 
-Long-term memory (CLAUDE.md and saved files) has been preserved.`,
+Ready for new work!`,
         },
       ],
     };

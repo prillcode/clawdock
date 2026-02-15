@@ -1,6 +1,7 @@
 /**
  * Session management for context tracking and warnings
  */
+import { ASSISTANT_NAME } from './config.js';
 import { logger } from './logger.js';
 
 // Approximate context window sizes for different models
@@ -16,12 +17,14 @@ const MODEL_CONTEXT_WINDOWS: Record<string, number> = {
 
 const DEFAULT_CONTEXT_WINDOW = 200000;
 const WARNING_THRESHOLD = 0.8; // 80%
+const AUTO_RESET_THRESHOLD = 1.0; // 100%
 
 export interface SessionMetrics {
   estimatedTokens: number;
   contextWindow: number;
   percentageUsed: number;
   shouldWarn: boolean;
+  shouldAutoReset: boolean;
 }
 
 /**
@@ -53,7 +56,10 @@ export function calculateSessionMetrics(
   );
   const contextWindow = getContextWindow(model);
   const percentageUsed = estimatedTokens / contextWindow;
-  const shouldWarn = percentageUsed >= WARNING_THRESHOLD;
+  const shouldWarn =
+    percentageUsed >= WARNING_THRESHOLD &&
+    percentageUsed < AUTO_RESET_THRESHOLD;
+  const shouldAutoReset = percentageUsed >= AUTO_RESET_THRESHOLD;
 
   logger.debug(
     {
@@ -61,6 +67,7 @@ export function calculateSessionMetrics(
       contextWindow,
       percentageUsed: (percentageUsed * 100).toFixed(1) + '%',
       shouldWarn,
+      shouldAutoReset,
     },
     'Session metrics calculated',
   );
@@ -70,6 +77,7 @@ export function calculateSessionMetrics(
     contextWindow,
     percentageUsed,
     shouldWarn,
+    shouldAutoReset,
   };
 }
 
@@ -79,7 +87,19 @@ export function calculateSessionMetrics(
 export function generateContextWarning(metrics: SessionMetrics): string {
   const percentage = (metrics.percentageUsed * 100).toFixed(0);
   return `⚠️ This chat session is getting long (${metrics.estimatedTokens.toLocaleString()} tokens, ${percentage}% of context window).
-Consider starting a new chat session to keep responses fast and reduce costs.
 
-To start fresh, say: "start a new chat session"`;
+Start a new session anytime by telling ${ASSISTANT_NAME}:
+• "Start a new session with context summary of current session" (recommended - preserves continuity)
+• "Start a new session completely fresh" (best for new work)`;
+}
+
+/**
+ * Generate automatic reset notification
+ */
+export function generateAutoResetMessage(): string {
+  return `🔄 **Automatic Session Reset**
+
+This chat session reached 100% of the context window. I've automatically started a new session with a summary of our previous discussion saved to session-summary.md.
+
+You can reference the full archive at: /workspace/group/conversations/archive/ if needed.`;
 }

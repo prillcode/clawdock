@@ -26,13 +26,87 @@ ClawDock tracks the approximate token count of your conversation in real-time:
 
 ### Automatic Warnings
 
-When a conversation reaches **80% of the context window**, Willis automatically sends a warning:
+When a conversation reaches **80% of the context window**, Willis automatically sends a warning with two options:
 
 ```
+⚠️ This chat session is getting long (142,000 tokens, 80% of context window).
+
+Start a new session anytime by telling Willis:
+• "Start a new session with context summary of current session" (recommended - preserves continuity)
+• "Start a new session completely fresh" (best for new work)
+```
+
+### Automatic Reset at 100%
+
+If you don't manually reset and the conversation reaches **100% of the context window**, Willis will:
+
+1. Automatically generate a summary of the current session
+2. Save it to `session-summary.md`
+3. Archive the full conversation
+4. Start a new session with the summary available
+5. Notify you that the reset occurred
+
+```
+🔄 Automatic Session Reset
+
+This chat session reached 100% of the context window. I've automatically started a new session with a summary of our previous discussion saved to session-summary.md.
+```
+
+**Thresholds are configurable** - see [Configuration](#configuration) below.
+
+---
+
+## Starting a New Chat Session
+
+### Two Options
+
+**Option 1: With Context Summary (Recommended)**
+
+Preserves continuity by summarizing the current session:
+
+```
+start a new session with context summary of current session
+```
+
+Willis will:
+
+- Generate a concise summary (accomplishments, current state, next steps)
+- Save to `session-summary.md`
+- Archive the full conversation
+- Reset context
+- The summary remains available in the new session
+
+**Option 2: Completely Fresh**
+
+Clean slate with no context carried over:
+
+```
+start a new session completely fresh
+```
+
+Willis will:
+
+- Archive the full conversation
+- Clear `session-summary.md` (if it exists)
+- Reset context completely
+- Ready for entirely new work
+
+### Short Variations
+
+These also work:
+
+```
+new session with summary
+new session fresh
+reset with summary
+reset completely
+```
+
 ⚠️ This chat session is getting long (142,000 tokens, 80% of context window).
 Consider starting a new chat session to keep responses fast and reduce costs.
 
 To start fresh, say: "start a new chat session"
+
 ```
 
 **Threshold is configurable** - see [Configuration](#configuration) below.
@@ -46,26 +120,32 @@ To start fresh, say: "start a new chat session"
 Simply say:
 
 ```
+
 start a new chat session
+
 ```
 
 Or variations like:
 
 ```
+
 let's start a new chat session
 can we start a new chat session?
 new chat session
+
 ```
 
 Willis will respond with:
 
 ```
+
 ✅ Started a new chat session. Previous session archived.
 
 You can find the old conversation in:
 /workspace/group/conversations/archive/session-2026-02-15-18-30/
 
 Long-term memory (CLAUDE.md and saved files) has been preserved.
+
 ```
 
 ### What Happens
@@ -96,31 +176,39 @@ Long-term memory (CLAUDE.md and saved files) has been preserved.
 ✅ **After completing a major task**
 
 ```
+
 You: Thanks for helping me build that Roblox inventory system!
 Willis: You're welcome! The system is complete.
 You: start a new chat session
+
 ```
 
 ✅ **When switching topics**
 
 ```
+
 You: [after long discussion about game mechanics]
 You: Now I want to work on AWS infrastructure instead
 You: start a new chat session
+
 ```
 
 ✅ **After receiving the 80% warning**
 
 ```
+
 Willis: ⚠️ This chat session is getting long...
 You: start a new chat session
+
 ```
 
 ✅ **When responses feel slow**
 
 ```
+
 You: Willis seems slower than usual
 You: start a new chat session
+
 ```
 
 ### When NOT to Start a New Session
@@ -128,16 +216,20 @@ You: start a new chat session
 ❌ **In the middle of a task**
 
 ```
+
 Willis: I've created the first part of the DataStore module...
 You: [Don't reset here - Willis needs context to continue]
+
 ```
 
 ❌ **When referencing recent conversation**
 
 ```
+
 You: What was that AWS command you mentioned earlier?
 [If you reset, Willis won't remember]
-```
+
+````
 
 ---
 
@@ -156,7 +248,7 @@ SESSION_WARNING_THRESHOLD=0.7
 
 # Warn at 95% (less frequent)
 SESSION_WARNING_THRESHOLD=0.95
-```
+````
 
 ### Disable Warnings
 

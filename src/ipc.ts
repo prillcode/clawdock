@@ -182,6 +182,7 @@ export async function processTaskIpc(
       containerConfig?: RegisteredGroup['containerConfig'];
     };
     groupFolder?: string; // For new_chat_session command
+    sessionSummary?: string; // For new_chat_session_with_summary
   },
   sourceGroup: string, // Verified identity from IPC directory
   isMain: boolean, // Verified from directory path
@@ -426,9 +427,16 @@ export async function processTaskIpc(
       break;
 
     case 'new_chat_session':
-      // Archive current session and start fresh
+    case 'new_chat_session_with_summary':
+    case 'new_chat_session_fresh':
+      // Archive current session and start fresh (with optional summary)
       if (data.groupFolder) {
         try {
+          const withSummary =
+            data.type === 'new_chat_session_with_summary' ||
+            data.type === 'new_chat_session'; // Default to with summary
+          const sessionSummary = data.sessionSummary || '';
+
           // Archive session directory if it exists
           const sessionDir = path.join(DATA_DIR, 'sessions', data.groupFolder);
           const archiveDir = path.join(
@@ -458,17 +466,49 @@ export async function processTaskIpc(
             );
           }
 
+          // Save session summary if provided
+          if (withSummary && sessionSummary) {
+            const summaryPath = path.join(
+              GROUPS_DIR,
+              data.groupFolder,
+              'session-summary.md',
+            );
+            fs.writeFileSync(summaryPath, sessionSummary, 'utf-8');
+            logger.info(
+              { groupFolder: data.groupFolder },
+              'Session summary saved',
+            );
+          } else if (data.type === 'new_chat_session_fresh') {
+            // Clear session summary for fresh start
+            const summaryPath = path.join(
+              GROUPS_DIR,
+              data.groupFolder,
+              'session-summary.md',
+            );
+            if (fs.existsSync(summaryPath)) {
+              fs.unlinkSync(summaryPath);
+              logger.info(
+                { groupFolder: data.groupFolder },
+                'Session summary cleared for fresh start',
+              );
+            }
+          }
+
           // Delete session from database
           deleteSession(data.groupFolder);
 
           logger.info(
-            { groupFolder: data.groupFolder },
-            'Chat session reset - starting fresh',
+            {
+              groupFolder: data.groupFolder,
+              withSummary,
+              resetType: data.type,
+            },
+            'Chat session reset',
           );
         } catch (error) {
           logger.error(
             { error, groupFolder: data.groupFolder },
-            'Failed to archive session',
+            'Failed to reset session',
           );
         }
       } else {
