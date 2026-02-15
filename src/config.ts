@@ -18,7 +18,7 @@ export const MOUNT_ALLOWLIST_PATH = path.join(
 export const STORE_DIR = path.resolve(PROJECT_ROOT, 'store');
 export const GROUPS_DIR = path.resolve(PROJECT_ROOT, 'groups');
 export const DATA_DIR = path.resolve(PROJECT_ROOT, 'data');
-export const MAIN_GROUP_FOLDER = 'main';
+export const MAIN_GROUP_FOLDER = 'clawdock-admin';
 
 export const CONTAINER_IMAGE =
   process.env.CONTAINER_IMAGE || 'nanoclaw-agent:latest';
@@ -59,7 +59,8 @@ export interface DiscordChannelConfig {
 
 /**
  * Parse DISCORD_CHANNELS env var.
- * Format: id:name:folder[:noTrigger]  (comma-separated)
+ * Format: id:name:folder[:requireTrigger]  (comma-separated)
+ * Default behavior: respond to all messages. Add :requireTrigger to only respond when @mentioned.
  * Falls back to legacy DISCORD_ADMIN_CHANNEL_ID if DISCORD_CHANNELS is not set.
  */
 export function parseDiscordChannels(): DiscordChannelConfig[] {
@@ -69,14 +70,14 @@ export function parseDiscordChannels(): DiscordChannelConfig[] {
       const parts = entry.trim().split(':');
       if (parts.length < 3) {
         throw new Error(
-          `Invalid DISCORD_CHANNELS entry "${entry}". Expected id:name:folder[:noTrigger]`,
+          `Invalid DISCORD_CHANNELS entry "${entry}". Expected id:name:folder[:requireTrigger]`,
         );
       }
       return {
         id: parts[0],
         name: parts[1],
         folder: parts[2],
-        requiresTrigger: parts[3] !== 'noTrigger',
+        requiresTrigger: parts[3] === 'requireTrigger',
       };
     });
   }

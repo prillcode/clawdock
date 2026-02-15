@@ -1,5 +1,5 @@
-
 # ClawDock
+
 <p align="center">
   <img src="assets/clawdock-logo-cropped.png" alt="NanoClaw" width="600">
 </p>
@@ -13,7 +13,6 @@
 <p align="center">
   An OpenClaw-inspired Claude assistant that runs securely in containers. Lightweight and built to be understood and customized for your own needs.
 </p>
-
 
 ## What Is This
 
@@ -32,15 +31,15 @@ Discord (discord.js) → SQLite → Polling Loop → Docker Container (Claude Ag
 
 Single Node.js process. Each registered Discord channel gets its own Docker container with mounted directories, a `CLAUDE.md` memory file, and an isolated Agent SDK session. The host process polls for new messages, spawns containers, and routes responses back through Discord.
 
-Talk to the bot with the trigger word (configurable via `ASSISTANT_NAME` env var, default: `@Andy`):
+By default, the bot responds to all messages in registered channels. You can optionally configure channels to only respond when mentioned with `@AssistantName` (configurable via `ASSISTANT_NAME` env var, default: `@Andy`):
 
 ```
-@AssistantName summarize the git history for the past week and flag anything that looks like drift
-@AssistantName every Monday at 8am, compile AI news from Hacker News and message me a briefing
-@AssistantName what's on the family calendar this week
+summarize the git history for the past week and flag anything that looks like drift
+every Monday at 8am, compile AI news from Hacker News and message me a briefing
+what's on the family calendar this week
 ```
 
-From the admin channel (`#main`), which responds to all messages without requiring the trigger word, manage the system:
+From the admin channel (`#clawdock-admin`), manage the system:
 
 ```
 list all scheduled tasks across channels
@@ -57,7 +56,7 @@ Each Discord channel is a fully isolated context:
 - **Own filesystem** — mount allowlist (`~/.config/nanoclaw/mount-allowlist.json`) controls what each channel can access
 - **Own session** — Agent SDK state in `data/sessions/{channel}/` prevents cross-channel session bleed
 
-The `#main` channel is privileged (can register channels, view all tasks, access the full project filesystem). Every other channel operates in a sandbox.
+The `#clawdock-admin` channel is privileged (can register channels, view all tasks, access the full project filesystem). Every other channel operates in a sandbox.
 
 See [docs/Groups-Use-Cases.md](docs/Groups-Use-Cases.md) for example channel configurations.
 
@@ -65,12 +64,12 @@ See [docs/Groups-Use-Cases.md](docs/Groups-Use-Cases.md) for example channel con
 
 ClawDock still uses Claude Code as the agent harness — the same "best harness, best model" philosophy from NanoClaw. However, ClawDock overrides the default Anthropic API endpoint, routing requests through [Z.AI](https://z.ai) (`ANTHROPIC_BASE_URL=https://api.z.ai/api/anthropic`). This enables per-channel model selection — each channel can run a different model tier based on its workload:
 
-| Channel  | Model  | Use Case |
-| -------- | ------ | -------- |
-| #main    | sonnet | Admin — responds to all messages (no trigger required) |
-| #family  | haiku  | Lightweight family logistics |
-| #devwork | opus   | Engineering work with `~/dev/` mounted read-write |
-| #gamedev | sonnet | Game development with `~/gamedev/` mounted read-write |
+| Channel            | Model  | Use Case                                              |
+| ------------------ | ------ | ----------------------------------------------------- |
+| #clawdock-admin    | sonnet | Admin and system management                           |
+| #family-assistant  | haiku  | Lightweight family logistics                          |
+| #devwork-assistant | opus   | Engineering work with `~/dev/` mounted read-write     |
+| #gamedev-assistant | sonnet | Game development with `~/gamedev/` mounted read-write |
 
 Safety limits are enforced per query: **$0.75 budget cap** and **30 turn limit**.
 
@@ -85,7 +84,7 @@ ClawDock is designed for always-on Linux deployment, not laptop-bound developmen
 ```bash
 systemctl --user start clawdock
 systemctl --user status clawdock
-journalctl --user -u clawdock -f 
+journalctl --user -u clawdock -f
 ```
 
 ![clawdock service terminal](assets/clawdock-service-terminal.png)
@@ -158,7 +157,7 @@ Key files:
 
 - **Discord I/O** — message Claude from any registered Discord channel
 - **Isolated channel context** — each channel has its own `CLAUDE.md` memory, isolated filesystem, and Docker container
-- **Admin channel** — `#main` for system administration; all other channels are sandboxed
+- **Admin channel** — `#clawdock-admin` for system administration; all other channels are sandboxed
 - **Scheduled tasks** — cron, interval, and one-shot jobs that run Claude and can message you back
 - **Web access** — search and fetch content
 - **Container isolation** — agents sandboxed in Docker with explicit filesystem mounts
@@ -214,4 +213,3 @@ MIT
 ### Credits
 
 ClawDock is a fork of [NanoClaw](https://github.com/qwibitai/nanoclaw) by [Gavriel Cohen](https://github.com/gavrielc) and contributors. NanoClaw was inspired by [OpenClaw](https://github.com/openclaw/openclaw) (formerly Clawdbot), built by [Peter Steinberger](https://github.com/steipete) and the community.
-

@@ -8,12 +8,12 @@ ClawDock is deployed on a homelab VM (`homelabvm` via Tailscale) as a systemd us
 
 ### Channels
 
-| Channel  | Folder    | Model  | Trigger                  | Extra Mounts        |
-| -------- | --------- | ------ | ------------------------ | ------------------- |
-| #main    | `main`    | sonnet | All messages (noTrigger) | Full project access |
-| #family  | `family`  | haiku  | @AssistantName           | None                |
-| #devwork | `devwork` | opus   | @AssistantName           | `~/dev/` (rw)       |
-| #gamedev | `gamedev` | sonnet | @AssistantName           | `~/gamedev/` (rw)   |
+| Channel            | Folder           | Model  | Trigger      | Extra Mounts        |
+| ------------------ | ---------------- | ------ | ------------ | ------------------- |
+| #clawdock-admin    | `clawdock-admin` | sonnet | All messages | Full project access |
+| #family-assistant  | `family`         | haiku  | All messages | None                |
+| #devwork-assistant | `devwork`        | opus   | All messages | `~/dev/` (rw)       |
+| #gamedev-assistant | `gamedev`        | sonnet | All messages | `~/gamedev/` (rw)   |
 
 ### API Provider
 

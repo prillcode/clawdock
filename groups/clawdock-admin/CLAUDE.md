@@ -1,6 +1,6 @@
-# ClawDock — Main Channel
+# ClawDock — Admin Channel
 
-This is the **main channel**, which has elevated privileges. All messages here are processed automatically (no @mention needed).
+This is the **admin channel**, which has elevated privileges. All messages here are processed automatically (no @mention needed).
 
 ## Admin Capabilities
 
@@ -12,12 +12,12 @@ This is the **main channel**, which has elevated privileges. All messages here a
 
 ## Container Mounts
 
-Main has access to the entire project:
+The admin channel has access to the entire project:
 
-| Container Path       | Host Path      | Access     |
-| -------------------- | -------------- | ---------- |
-| `/workspace/project` | Project root   | read-write |
-| `/workspace/group`   | `groups/main/` | read-write |
+| Container Path       | Host Path                | Access     |
+| -------------------- | ------------------------ | ---------- |
+| `/workspace/project` | Project root             | read-write |
+| `/workspace/group`   | `groups/clawdock-admin/` | read-write |
 
 Key paths inside the container:
 
@@ -149,9 +149,9 @@ The task will run in that group's context with access to their files and memory.
 
 ### Current Channel JIDs
 
-| Channel  | JID                 | Folder  |
-| -------- | ------------------- | ------- |
-| #main    | 1471887664491008143 | main    |
-| #family  | 1471916061560406220 | family  |
-| #devwork | 1471916342687826041 | devwork |
-| #gamedev | 1471916406097445066 | gamedev |
+| Channel            | JID                 | Folder         |
+| ------------------ | ------------------- | -------------- |
+| #clawdock-admin    | 1471887664491008143 | clawdock-admin |
+| #family-assistant  | 1471916061560406220 | family         |
+| #devwork-assistant | 1471916342687826041 | devwork        |
+| #gamedev-assistant | 1471916406097445066 | gamedev        |

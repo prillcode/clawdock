@@ -9,7 +9,7 @@ Each Discord channel (or WhatsApp group) that ClawDock monitors is a **group**. 
 - **Isolated memory** — what ClawDock learns in one channel stays in that channel
 - **Isolated sessions** — conversation context persists per-channel across restarts
 
-Groups **cannot** see each other's files or memory. The only exception is the `main` group, which has admin access to the entire project and all group folders.
+Groups **cannot** see each other's files or memory. The only exception is the `clawdock-admin` group, which has admin access to the entire project and all group folders.
 
 ## Memory Model
 
@@ -58,17 +58,17 @@ The agent sees both: global provides the baseline, group provides the customizat
 Channels are configured via the `DISCORD_CHANNELS` env var:
 
 ```
-DISCORD_CHANNELS=id:name:folder[:noTrigger],...
+DISCORD_CHANNELS=id:name:folder[:requireTrigger],...
 ```
 
-- `noTrigger` — agent processes all messages (used for #main)
-- Without `noTrigger` — agent only responds when `@AssistantName` is mentioned
+- **Default behavior** — agent processes all messages
+- `requireTrigger` — agent only responds when `@AssistantName` is mentioned
 
 ---
 
 ## Channel Descriptions
 
-### #main (folder: `main`)
+### #clawdock-admin (folder: `clawdock-admin`)
 
 **Purpose**: Admin/personal command center
 
@@ -96,11 +96,11 @@ DISCORD_CHANNELS=id:name:folder[:noTrigger],...
 
 ---
 
-### #family (folder: `family`)
+### #family-assistant (folder: `family`)
 
 **Purpose**: Family-oriented conversations and planning
 
-**Trigger**: `@AssistantName` required
+**Trigger**: None — all messages processed automatically
 
 **Use Cases**:
 
@@ -125,11 +125,11 @@ DISCORD_CHANNELS=id:name:folder[:noTrigger],...
 
 ---
 
-### #devwork (folder: `devwork`)
+### #devwork-assistant (folder: `devwork`)
 
 **Purpose**: Professional software development
 
-**Trigger**: `@AssistantName` required
+**Trigger**: None — all messages processed automatically
 
 **Use Cases**:
 
@@ -155,11 +155,11 @@ DISCORD_CHANNELS=id:name:folder[:noTrigger],...
 
 ---
 
-### #gamedev (folder: `gamedev`)
+### #gamedev-assistant (folder: `gamedev`)
 
 **Purpose**: Game development projects and discussions
 
-**Trigger**: `@AssistantName` required
+**Trigger**: None — all messages processed automatically
 
 **Use Cases**:
 
@@ -201,11 +201,11 @@ DISCORD_CHANNELS=id:name:folder[:noTrigger],...
 
 ## Cross-Channel Communication
 
-Channels are isolated by design, but the **#main** channel can:
+Channels are isolated by design, but the **#clawdock-admin** channel can:
 
 - Read any group's files and conversation history
 - Schedule tasks that run in another channel's context
 - Send messages to any registered channel
 - Register or unregister channels
 
-This makes #main the central hub for cross-channel coordination without breaking the isolation of individual channels.
+This makes #clawdock-admin the central hub for cross-channel coordination without breaking the isolation of individual channels.
