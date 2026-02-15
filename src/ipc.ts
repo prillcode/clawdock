@@ -163,16 +163,17 @@ export async function processTaskIpc(
     schedule_type?: string;
     schedule_value?: string;
     context_mode?: string;
-    groupFolder?: string;
-    chatJid?: string;
     targetJid?: string;
-    // For register_group
+    targetChannel?: string;
     jid?: string;
     name?: string;
     folder?: string;
     trigger?: string;
     requiresTrigger?: boolean;
     containerConfig?: RegisteredGroup['containerConfig'];
+    updates?: {
+      containerConfig?: RegisteredGroup['containerConfig'];
+    };
   },
   sourceGroup: string, // Verified identity from IPC directory
   isMain: boolean, // Verified from directory path
@@ -373,6 +374,45 @@ export async function processTaskIpc(
         logger.warn(
           { data },
           'Invalid register_group request - missing required fields',
+        );
+      }
+      break;
+
+    case 'update_channel':
+      // Only main group can update channels
+      if (!isMain) {
+        logger.warn(
+          { sourceGroup },
+          'Unauthorized update_channel attempt blocked',
+        );
+        break;
+      }
+
+      if (data.jid && data.updates) {
+        const existing = registeredGroups[data.jid];
+        if (!existing) {
+          logger.warn({ jid: data.jid }, 'Cannot update non-existent channel');
+          break;
+        }
+
+        // Merge updates into existing config
+        const updatedGroup = {
+          ...existing,
+          containerConfig: {
+            ...existing.containerConfig,
+            ...data.updates.containerConfig,
+          },
+        };
+
+        deps.registerGroup(data.jid, updatedGroup);
+        logger.info(
+          { channel: existing.name, updates: data.updates },
+          'Updated channel configuration',
+        );
+      } else {
+        logger.warn(
+          { data },
+          'Invalid update_channel request - missing jid or updates',
         );
       }
       break;

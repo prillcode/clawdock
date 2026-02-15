@@ -28,6 +28,7 @@ export interface AllowedRoot {
 }
 
 export interface ContainerConfig {
+  image?: string; // Container image tag (e.g., 'base', 'devtools') - defaults to 'base'
   additionalMounts?: AdditionalMount[];
   timeout?: number; // Default: 300000 (5 minutes)
   // Agent SDK query options

@@ -548,6 +548,7 @@ async function main(): Promise<void> {
         trigger: ch.requiresTrigger ? `@${ASSISTANT_NAME}` : '@mention',
         requiresTrigger: ch.requiresTrigger,
         containerConfig: {
+          image: ch.image || 'base',
           model,
           maxBudgetUsd: AGENT_MAX_BUDGET_USD,
           maxTurns: AGENT_MAX_TURNS,

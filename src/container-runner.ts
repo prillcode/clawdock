@@ -17,11 +17,46 @@ import {
 } from './config.js';
 import { logger } from './logger.js';
 import { validateAdditionalMounts } from './mount-security.js';
-import { RegisteredGroup } from './types.js';
+import { ContainerConfig, RegisteredGroup } from './types.js';
 
 // Sentinel markers for robust output parsing (must match agent-runner)
 const OUTPUT_START_MARKER = '---NANOCLAW_OUTPUT_START---';
 const OUTPUT_END_MARKER = '---NANOCLAW_OUTPUT_END---';
+
+// Cache for validated container images (avoid repeated Docker CLI calls)
+const validatedImages = new Set<string>();
+
+/**
+ * Validate that a container image exists locally
+ */
+async function validateContainerImage(imageName: string): Promise<boolean> {
+  if (validatedImages.has(imageName)) {
+    return true;
+  }
+
+  return new Promise((resolve) => {
+    exec(`docker image inspect ${imageName}`, (error) => {
+      if (error) {
+        logger.error(
+          { imageName },
+          `Container image not found. Run: ./container/build.sh`,
+        );
+        resolve(false);
+      } else {
+        validatedImages.add(imageName);
+        resolve(true);
+      }
+    });
+  });
+}
+
+/**
+ * Resolve image name from containerConfig
+ */
+function resolveImageName(containerConfig?: ContainerConfig): string {
+  const imageTag = containerConfig?.image || 'base';
+  return `clawdock-agent:${imageTag}`;
+}
 
 function getHomeDir(): string {
   const home = process.env.HOME || os.homedir();
@@ -264,6 +299,7 @@ function buildVolumeMounts(
 function buildContainerArgs(
   mounts: VolumeMount[],
   containerName: string,
+  imageName: string,
 ): string[] {
   const args: string[] = ['run', '-i', '--rm', '--name', containerName];
 
@@ -276,7 +312,7 @@ function buildContainerArgs(
     }
   }
 
-  args.push(CONTAINER_IMAGE);
+  args.push(imageName);
 
   return args;
 }
@@ -292,10 +328,20 @@ export async function runContainerAgent(
   const groupDir = path.join(GROUPS_DIR, group.folder);
   fs.mkdirSync(groupDir, { recursive: true });
 
+  // Resolve and validate container image
+  const imageName = resolveImageName(group.containerConfig);
+  const isValid = await validateContainerImage(imageName);
+
+  if (!isValid) {
+    throw new Error(
+      `Container image ${imageName} not found. Build with: ./container/build.sh`,
+    );
+  }
+
   const mounts = buildVolumeMounts(group, input.isMain);
   const safeName = group.folder.replace(/[^a-zA-Z0-9-]/g, '-');
   const containerName = `nanoclaw-${safeName}-${Date.now()}`;
-  const containerArgs = buildContainerArgs(mounts, containerName);
+  const containerArgs = buildContainerArgs(mounts, containerName, imageName);
 
   logger.debug(
     {
@@ -314,6 +360,7 @@ export async function runContainerAgent(
     {
       group: group.name,
       containerName,
+      image: imageName,
       mountCount: mounts.length,
       isMain: input.isMain,
     },

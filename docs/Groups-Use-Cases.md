@@ -70,6 +70,8 @@ DISCORD_CHANNELS=id:name:folder[:requireTrigger],...
 
 ### #clawdock-admin (folder: `clawdock-admin`)
 
+**Container Image**: `devtools`
+
 **Purpose**: Admin/personal command center
 
 **Trigger**: None — all messages processed automatically
@@ -97,6 +99,8 @@ DISCORD_CHANNELS=id:name:folder[:requireTrigger],...
 ---
 
 ### #family-assistant (folder: `family`)
+
+**Container Image**: `base`
 
 **Purpose**: Family-oriented conversations and planning
 
@@ -127,6 +131,8 @@ DISCORD_CHANNELS=id:name:folder[:requireTrigger],...
 
 ### #devwork-assistant (folder: `devwork`)
 
+**Container Image**: `devtools`
+
 **Purpose**: Professional software development
 
 **Trigger**: None — all messages processed automatically
@@ -156,6 +162,8 @@ DISCORD_CHANNELS=id:name:folder[:requireTrigger],...
 ---
 
 ### #gamedev-assistant (folder: `gamedev`)
+
+**Container Image**: `devtools`
 
 **Purpose**: Game development projects and discussions
 

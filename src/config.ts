@@ -21,7 +21,7 @@ export const DATA_DIR = path.resolve(PROJECT_ROOT, 'data');
 export const MAIN_GROUP_FOLDER = 'clawdock-admin';
 
 export const CONTAINER_IMAGE =
-  process.env.CONTAINER_IMAGE || 'nanoclaw-agent:latest';
+  process.env.CONTAINER_IMAGE || 'clawdock-agent:base';
 export const CONTAINER_TIMEOUT = parseInt(
   process.env.CONTAINER_TIMEOUT || '1800000',
   10,
@@ -55,12 +55,20 @@ export interface DiscordChannelConfig {
   name: string;
   folder: string;
   requiresTrigger: boolean;
+  image?: string; // Container image tag (e.g., 'base', 'devtools')
 }
 
 /**
  * Parse DISCORD_CHANNELS env var.
- * Format: id:name:folder[:requireTrigger]  (comma-separated)
- * Default behavior: respond to all messages. Add :requireTrigger to only respond when @mentioned.
+ * Format: id:name:folder[:triggerFlag][:image]
+ *   - triggerFlag: 'requireTrigger' to only respond when @mentioned (optional, default: no trigger)
+ *   - image: container image tag ('base' or 'devtools') - defaults to 'base' (optional)
+ *
+ * Examples:
+ *   123:family-assistant:family::base
+ *   456:devwork-assistant:devwork::devtools
+ *   789:gamedev-assistant:gamedev:requireTrigger:devtools
+ *
  * Falls back to legacy DISCORD_ADMIN_CHANNEL_ID if DISCORD_CHANNELS is not set.
  */
 export function parseDiscordChannels(): DiscordChannelConfig[] {
@@ -70,14 +78,23 @@ export function parseDiscordChannels(): DiscordChannelConfig[] {
       const parts = entry.trim().split(':');
       if (parts.length < 3) {
         throw new Error(
-          `Invalid DISCORD_CHANNELS entry "${entry}". Expected id:name:folder[:requireTrigger]`,
+          `Invalid DISCORD_CHANNELS entry "${entry}". Expected id:name:folder[:triggerFlag][:image]`,
         );
       }
+
+      // Parse optional trigger flag (4th segment)
+      const triggerFlag = parts[3] || '';
+      const requiresTrigger = triggerFlag === 'requireTrigger';
+
+      // Parse optional image (5th segment)
+      const image = parts[4] || 'base';
+
       return {
         id: parts[0],
         name: parts[1],
         folder: parts[2],
-        requiresTrigger: parts[3] === 'requireTrigger',
+        requiresTrigger,
+        image,
       };
     });
   }
@@ -91,6 +108,7 @@ export function parseDiscordChannels(): DiscordChannelConfig[] {
         name: 'Discord Admin',
         folder: MAIN_GROUP_FOLDER,
         requiresTrigger: false,
+        image: 'devtools', // Admin gets devtools by default
       },
     ];
   }

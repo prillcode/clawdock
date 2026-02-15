@@ -60,6 +60,27 @@ The `#clawdock-admin` channel is privileged (can register channels, view all tas
 
 See [docs/Groups-Use-Cases.md](docs/Groups-Use-Cases.md) for example channel configurations.
 
+## Container Images
+
+ClawDock provides two container images optimized for different workloads:
+
+- **`base`** — Lightweight image (~750MB) with browser, git, and basic utilities. Use for family channels and general assistance.
+- **`devtools`** — Extended image (~1.1GB) with AWS CLI, GitHub CLI, and Docker CLI on top of base. Use for development, DevOps, and admin channels.
+
+Select the appropriate image per channel at registration time:
+
+```bash
+DISCORD_CHANNELS=123:family-assistant:family::base,456:devwork-assistant:devwork::devtools
+```
+
+Or update at runtime from #clawdock-admin:
+
+```
+update channel #devwork-assistant to use devtools image
+```
+
+See [docs/CONTAINER-IMAGES.md](docs/CONTAINER-IMAGES.md) for details on building, selecting, and customizing images.
+
 ## Claude Model Override
 
 ClawDock still uses Claude Code as the agent harness — the same "best harness, best model" philosophy from NanoClaw. However, ClawDock overrides the default Anthropic API endpoint, routing requests through [Z.AI](https://z.ai) (`ANTHROPIC_BASE_URL=https://api.z.ai/api/anthropic`). This enables per-channel model selection — each channel can run a different model tier based on its workload:
