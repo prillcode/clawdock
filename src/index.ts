@@ -244,9 +244,12 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
   // Check context usage and handle warnings/auto-reset
   if (outputSentToUser && channel) {
     try {
-      // Get all messages in conversation for context estimation
+      // Get recent messages for context estimation (limit to last 1000 to avoid performance issues)
+      // TODO: Track actual token count in session state instead of fetching all messages
       const allMessages = getMessagesSince(chatJid, '', ASSISTANT_NAME);
-      const conversationHistory = allMessages.map((m) => m.content);
+      // Limit to prevent performance issues with very long conversations
+      const recentMessages = allMessages.slice(-1000);
+      const conversationHistory = recentMessages.map((m) => m.content);
 
       // Calculate metrics based on current model
       const model = group.containerConfig?.model || AGENT_MODEL;
