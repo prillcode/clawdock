@@ -6,12 +6,19 @@ import { CronExpressionParser } from 'cron-parser';
 import {
   ASSISTANT_NAME,
   DATA_DIR,
+  GROUPS_DIR,
   IPC_POLL_INTERVAL,
   MAIN_GROUP_FOLDER,
   TIMEZONE,
 } from './config.js';
 import { AvailableGroup } from './container-runner.js';
-import { createTask, deleteTask, getTaskById, updateTask } from './db.js';
+import {
+  createTask,
+  deleteSession,
+  deleteTask,
+  getTaskById,
+  updateTask,
+} from './db.js';
 import { logger } from './logger.js';
 import { RegisteredGroup } from './types.js';
 
@@ -174,6 +181,7 @@ export async function processTaskIpc(
     updates?: {
       containerConfig?: RegisteredGroup['containerConfig'];
     };
+    groupFolder?: string; // For new_chat_session command
   },
   sourceGroup: string, // Verified identity from IPC directory
   isMain: boolean, // Verified from directory path
@@ -413,6 +421,60 @@ export async function processTaskIpc(
         logger.warn(
           { data },
           'Invalid update_channel request - missing jid or updates',
+        );
+      }
+      break;
+
+    case 'new_chat_session':
+      // Archive current session and start fresh
+      if (data.groupFolder) {
+        try {
+          // Archive session directory if it exists
+          const sessionDir = path.join(DATA_DIR, 'sessions', data.groupFolder);
+          const archiveDir = path.join(
+            GROUPS_DIR,
+            data.groupFolder,
+            'conversations',
+            'archive',
+          );
+
+          if (fs.existsSync(sessionDir)) {
+            // Create archive directory
+            fs.mkdirSync(archiveDir, { recursive: true });
+
+            // Archive with timestamp
+            const timestamp = new Date()
+              .toISOString()
+              .replace(/[:.]/g, '-')
+              .slice(0, 19);
+            const archivePath = path.join(archiveDir, `session-${timestamp}`);
+
+            // Move session directory to archive
+            fs.renameSync(sessionDir, archivePath);
+
+            logger.info(
+              { groupFolder: data.groupFolder, archivePath },
+              'Session archived',
+            );
+          }
+
+          // Delete session from database
+          deleteSession(data.groupFolder);
+
+          logger.info(
+            { groupFolder: data.groupFolder },
+            'Chat session reset - starting fresh',
+          );
+        } catch (error) {
+          logger.error(
+            { error, groupFolder: data.groupFolder },
+            'Failed to archive session',
+          );
+        }
+      } else {
+        logger.warn(
+          { data },
+          'Invalid new_chat_session request - missing groupFolder',
         );
       }
       break;

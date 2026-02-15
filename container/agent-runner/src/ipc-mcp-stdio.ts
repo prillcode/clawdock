@@ -386,6 +386,47 @@ Use available_groups.json to find the JID for a group. The folder name should be
 );
 
 server.tool(
+  'new_chat_session',
+  `Start a new chat session by archiving the current conversation and clearing context.
+
+This is useful when:
+- The conversation is getting too long (high token usage)
+- You want to start fresh on a different topic
+- Context is becoming bloated and responses are slow
+
+The old session will be archived and can be referenced later if needed.`,
+  {},
+  async () => {
+    const data = {
+      type: 'new_chat_session',
+      groupFolder,
+      timestamp: new Date().toISOString(),
+    };
+
+    writeIpcFile(TASKS_DIR, data);
+
+    const archiveTimestamp = new Date()
+      .toISOString()
+      .replace(/[:.]/g, '-')
+      .slice(0, 19);
+
+    return {
+      content: [
+        {
+          type: 'text' as const,
+          text: `✅ Started a new chat session. Previous session archived.
+
+You can find the old conversation in:
+/workspace/group/conversations/archive/session-${archiveTimestamp}/
+
+Long-term memory (CLAUDE.md and saved files) has been preserved.`,
+        },
+      ],
+    };
+  },
+);
+
+server.tool(
   'update_channel',
   `Update a registered channel's configuration (container image, model, etc.). Admin channel only.
 

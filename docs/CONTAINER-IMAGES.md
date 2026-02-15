@@ -305,6 +305,54 @@ Image selection is stored in the database (`registered_groups` table) as part of
 
 ---
 
+## Session Management
+
+### Context Warnings
+
+ClawDock automatically monitors conversation length and warns when context usage reaches 80% of the model's context window.
+
+**Warning appears like:**
+
+```
+⚠️ This chat session is getting long (142,000 tokens, 71% of context window).
+Consider starting a new chat session to keep responses fast and reduce costs.
+
+To start fresh, say: "start a new chat session"
+```
+
+### Starting a New Chat Session
+
+**From Discord:**
+
+```
+start a new chat session
+```
+
+Willis will:
+
+1. Archive the current session to `groups/{channel}/conversations/archive/`
+2. Clear the Agent SDK session state
+3. Start fresh with empty context
+4. Preserve long-term memory (CLAUDE.md and saved files)
+
+**From #clawdock-admin (for any channel):**
+
+```
+reset the chat session for gamedev-assistant
+```
+
+### Archived Sessions
+
+Old sessions are saved to:
+
+```
+groups/{channel}/conversations/archive/session-2026-02-15-18-30/
+```
+
+You can browse archived sessions manually or ask Willis to summarize them.
+
+---
+
 ## See Also
 
 - [Groups and Channels Guide](Groups-Use-Cases.md) - Per-channel configurations

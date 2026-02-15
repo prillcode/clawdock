@@ -49,6 +49,10 @@ import {
   formatOutbound,
   routeOutbound,
 } from './router.js';
+import {
+  calculateSessionMetrics,
+  generateContextWarning,
+} from './session-manager.js';
 import { startSchedulerLoop } from './task-scheduler.js';
 import { Channel, NewMessage, RegisteredGroup } from './types.js';
 import { logger } from './logger.js';
@@ -234,6 +238,39 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
       'Agent error, rolled back message cursor for retry',
     );
     return false;
+  }
+
+  // Check context usage and warn if threshold exceeded
+  if (outputSentToUser && channel) {
+    try {
+      // Get all messages in conversation for context estimation
+      const allMessages = getMessagesSince(chatJid, '', ASSISTANT_NAME);
+      const conversationHistory = allMessages.map((m) => m.content);
+
+      // Calculate metrics based on current model
+      const model = group.containerConfig?.model || AGENT_MODEL;
+      const metrics = calculateSessionMetrics(conversationHistory, model);
+
+      // Send warning if threshold exceeded (80%)
+      if (metrics.shouldWarn) {
+        const warning = generateContextWarning(metrics);
+        await channel.sendMessage(chatJid, warning);
+        logger.info(
+          {
+            group: group.name,
+            estimatedTokens: metrics.estimatedTokens,
+            percentageUsed: (metrics.percentageUsed * 100).toFixed(1) + '%',
+          },
+          'Sent context warning to user',
+        );
+      }
+    } catch (error) {
+      // Don't fail the entire message processing if context check fails
+      logger.warn(
+        { error, group: group.name },
+        'Failed to check context usage',
+      );
+    }
   }
 
   return true;
