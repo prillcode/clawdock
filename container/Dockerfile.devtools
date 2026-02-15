@@ -7,8 +7,10 @@ FROM clawdock-agent:base
 USER root
 
 RUN apt-get update && apt-get install -y \
-    # GitHub CLI for git operations
+    # Prerequisites
     ca-certificates \
+    gnupg \
+    # GitHub CLI for git operations
     && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
        | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg 2>/dev/null \
     && chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
