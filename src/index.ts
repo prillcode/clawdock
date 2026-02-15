@@ -562,9 +562,14 @@ async function main(): Promise<void> {
         });
       } else {
         // Update existing group configuration (e.g., trigger name change)
+        // Merge containerConfig to preserve additionalMounts while updating model/budget/turns
         registeredGroups[ch.id] = {
           ...registeredGroups[ch.id],
           ...updatedConfig,
+          containerConfig: {
+            ...registeredGroups[ch.id].containerConfig,
+            ...updatedConfig.containerConfig,
+          },
           added_at: registeredGroups[ch.id].added_at, // Preserve original add date
         };
         setRegisteredGroup(ch.id, registeredGroups[ch.id]);
