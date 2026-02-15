@@ -1,19 +1,19 @@
-# NanoClaw Groups & Channels
+# ClawDock Groups & Channels
 
 ## Architecture Overview
 
-Each Discord channel (or WhatsApp group) that NanoClaw monitors is a **group**. Each group gets:
+Each Discord channel (or WhatsApp group) that ClawDock monitors is a **group**. Each group gets:
 
 - **Isolated container** — a sandboxed Linux environment where the agent runs
 - **Isolated filesystem** — `groups/{folder}/` with its own files, notes, and conversation history
-- **Isolated memory** — what Prillbot learns in one channel stays in that channel
+- **Isolated memory** — what ClawDock learns in one channel stays in that channel
 - **Isolated sessions** — conversation context persists per-channel across restarts
 
 Groups **cannot** see each other's files or memory. The only exception is the `main` group, which has admin access to the entire project and all group folders.
 
 ## Memory Model
 
-Prillbot has three layers of memory, from most ephemeral to most persistent:
+ClawDock has three layers of memory, from most ephemeral to most persistent:
 
 ### 1. Session Memory (automatic, temporary)
 
@@ -21,7 +21,7 @@ Claude maintains a conversation session per channel. Within a session, it rememb
 
 ### 2. File-Based Memory (explicit, persistent)
 
-When Prillbot learns something important, it writes files to `/workspace/group/` inside its container (which maps to `groups/{folder}/` on the host). Examples:
+When ClawDock learns something important, it writes files to `/workspace/group/` inside its container (which maps to `groups/{folder}/` on the host). Examples:
 
 - `groups/family/family-members.md` — names, birthdays, preferences
 - `groups/devwork/project-context.md` — tech stacks, conventions, repos
@@ -62,7 +62,7 @@ DISCORD_CHANNELS=id:name:folder[:noTrigger],...
 ```
 
 - `noTrigger` — agent processes all messages (used for #main)
-- Without `noTrigger` — agent only responds when `@Prillbot` is mentioned
+- Without `noTrigger` — agent only responds when `@AssistantName` is mentioned
 
 ---
 
@@ -76,7 +76,7 @@ DISCORD_CHANNELS=id:name:folder[:noTrigger],...
 
 **Capabilities**:
 
-- Full project filesystem access (can modify NanoClaw itself)
+- Full project filesystem access (can modify ClawDock itself)
 - Manage other groups (register/unregister channels)
 - Schedule tasks for any channel
 - View and query the message database
@@ -86,7 +86,7 @@ DISCORD_CHANNELS=id:name:folder[:noTrigger],...
 
 - Administrative commands ("list all groups", "schedule a daily summary in #family")
 - Direct personal conversations without needing to @mention
-- Debugging and monitoring NanoClaw itself
+- Debugging and monitoring ClawDock itself
 - Cross-channel operations ("what did we discuss in #devwork yesterday?")
 
 **Memory Focus**:
@@ -100,7 +100,7 @@ DISCORD_CHANNELS=id:name:folder[:noTrigger],...
 
 **Purpose**: Family-oriented conversations and planning
 
-**Trigger**: `@Prillbot` required
+**Trigger**: `@AssistantName` required
 
 **Use Cases**:
 
@@ -129,7 +129,7 @@ DISCORD_CHANNELS=id:name:folder[:noTrigger],...
 
 **Purpose**: Professional software development
 
-**Trigger**: `@Prillbot` required
+**Trigger**: `@AssistantName` required
 
 **Use Cases**:
 
@@ -159,7 +159,7 @@ DISCORD_CHANNELS=id:name:folder[:noTrigger],...
 
 **Purpose**: Game development projects and discussions
 
-**Trigger**: `@Prillbot` required
+**Trigger**: `@AssistantName` required
 
 **Use Cases**:
 
@@ -197,7 +197,7 @@ DISCORD_CHANNELS=id:name:folder[:noTrigger],...
    DISCORD_CHANNELS=...,NEW_ID:ChannelName:folder-name
    ```
 5. Create `groups/folder-name/CLAUDE.md` with channel-specific instructions
-6. Restart NanoClaw — the channel will auto-register
+6. Restart ClawDock — the channel will auto-register
 
 ## Cross-Channel Communication
 

@@ -4,16 +4,16 @@ Last updated: 2026-02-14
 
 ## What's Running
 
-NanoClaw ("Prillbot") is deployed on a homelab VM (`homelabvm` via Tailscale) as a systemd user service. It connects to Discord and runs Claude agents in Docker containers, one per channel.
+ClawDock is deployed on a homelab VM (`homelabvm` via Tailscale) as a systemd user service. It connects to Discord and runs Claude agents in Docker containers, one per channel.
 
 ### Channels
 
 | Channel  | Folder    | Model  | Trigger                  | Extra Mounts        |
 | -------- | --------- | ------ | ------------------------ | ------------------- |
 | #main    | `main`    | sonnet | All messages (noTrigger) | Full project access |
-| #family  | `family`  | haiku  | @Prillbot                | None                |
-| #devwork | `devwork` | opus   | @Prillbot                | `~/dev/` (rw)       |
-| #gamedev | `gamedev` | sonnet | @Prillbot                | `~/gamedev/` (rw)   |
+| #family  | `family`  | haiku  | @AssistantName           | None                |
+| #devwork | `devwork` | opus   | @AssistantName           | `~/dev/` (rw)       |
+| #gamedev | `gamedev` | sonnet | @AssistantName           | `~/gamedev/` (rw)   |
 
 ### API Provider
 
@@ -56,14 +56,14 @@ Extra directory mounts are validated against an allowlist at `~/.config/nanoclaw
 
 Separate repo at `~/dev/clawdock-web/`. Scaffolded but not yet implemented.
 
-**Goal**: Web chat interface for Prillbot — talk to any channel from a browser instead of Discord.
+**Goal**: Web chat interface for ClawDock — talk to any channel from a browser instead of Discord.
 
 **Stack**: React 19 + Vite + Tailwind on Cloudflare Pages, Hono API on Cloudflare Workers, D1 for storage, Better Auth (Google + GitHub with allowlist).
 
 **Phases**:
 
 1. **MVP** — Messages routed through Discord (bot token sends/polls). Auth, session management, channel selector, chat UI.
-2. **Direct API** — Bypass Discord, talk to NanoClaw directly via WebSocket/SSE for real-time streaming.
+2. **Direct API** — Bypass Discord, talk to ClawDock directly via WebSocket/SSE for real-time streaming.
 3. **File browser** — Browse agent workspace files and view inline diffs.
 
 Plan document: `~/dev/clawdock-web/.planning/CLAWDOCK-WEB-UI-PLAN.md`

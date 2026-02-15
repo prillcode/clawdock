@@ -1,181 +1,215 @@
+
+# ClawDock
 <p align="center">
-  <img src="assets/nanoclaw-logo.png" alt="NanoClaw" width="400">
+  <img src="assets/clawdock-logo-cropped.png" alt="NanoClaw" width="600">
+</p>
+
+**ClawDock** is a personal Claude AI assistant running in Docker containers with Discord as the messaging layer. Fork of [NanoClaw](https://github.com/qwibitai/nanoclaw) — rebuilt for Linux homelab deployment.
+
+<p align="center">
+  <img src="assets/nanoclaw-logo.png" alt="NanoClaw" width="200">
 </p>
 
 <p align="center">
-  My personal Claude assistant that runs securely in containers. Lightweight and built to be understood and customized for your own needs.
+  An OpenClaw-inspired Claude assistant that runs securely in containers. Lightweight and built to be understood and customized for your own needs.
 </p>
 
-<p align="center">
-  <a href="https://discord.gg/VGWXrf8x"><img src="https://img.shields.io/discord/1470188214710046894?label=Discord&logo=discord&v=2" alt="Discord"></a>
-</p>
 
-**New:** First AI assistant to support [Agent Swarms](https://code.claude.com/docs/en/agent-teams). Spin up teams of agents that collaborate in your chat.
+## What Is This
 
-## Why I Built This
+ClawDock takes the core idea from NanoClaw — a lightweight, container-isolated AI assistant built on the [Claude Agent SDK](https://docs.anthropic.com/en/docs/agents-and-tools/claude-agent-sdk) — and makes two major changes:
 
-[OpenClaw](https://github.com/openclaw/openclaw) is an impressive project with a great vision. But I can't sleep well running software I don't understand with access to my life. OpenClaw has 52+ modules, 8 config management files, 45+ dependencies, and abstractions for 15 channel providers. Security is application-level (allowlists, pairing codes) rather than OS isolation. Everything runs in one Node process with shared memory.
+1. **Discord replaces WhatsApp.** Each Discord channel maps to an isolated agent with its own memory, filesystem, and Docker container. No cross-channel data leakage.
+2. **Docker on Linux replaces Apple Container on macOS.** Runs as a systemd service on a Linux VM, not a launchd daemon on a Mac.
 
-NanoClaw gives you the same core functionality in a codebase you can understand in 8 minutes. One process. A handful of files. Agents run in actual Linux containers with filesystem isolation, not behind permission checks.
+The name "ClawDock" captures both the lineage (Claw, from NanoClaw/OpenClaw) and the Docker-first container strategy.
+
+## How It Works
+
+```
+Discord (discord.js) → SQLite → Polling Loop → Docker Container (Claude Agent SDK) → IPC → Discord Response
+```
+
+Single Node.js process. Each registered Discord channel gets its own Docker container with mounted directories, a `CLAUDE.md` memory file, and an isolated Agent SDK session. The host process polls for new messages, spawns containers, and routes responses back through Discord.
+
+Talk to the bot with the trigger word (configurable via `ASSISTANT_NAME` env var, default: `@Andy`):
+
+```
+@AssistantName summarize the git history for the past week and flag anything that looks like drift
+@AssistantName every Monday at 8am, compile AI news from Hacker News and message me a briefing
+@AssistantName what's on the family calendar this week
+```
+
+From the admin channel (`#main`), which responds to all messages without requiring the trigger word, manage the system:
+
+```
+list all scheduled tasks across channels
+register #new-channel
+pause the Monday briefing task
+```
+
+## Channel Isolation
+
+Each Discord channel is a fully isolated context:
+
+- **Own Docker container** — agents are sandboxed with explicit volume mounts, not prompt-level restrictions
+- **Own memory** — `groups/{channel}/CLAUDE.md` persists context across conversations
+- **Own filesystem** — mount allowlist (`~/.config/nanoclaw/mount-allowlist.json`) controls what each channel can access
+- **Own session** — Agent SDK state in `data/sessions/{channel}/` prevents cross-channel session bleed
+
+The `#main` channel is privileged (can register channels, view all tasks, access the full project filesystem). Every other channel operates in a sandbox.
+
+See [docs/Groups-Use-Cases.md](docs/Groups-Use-Cases.md) for example channel configurations.
+
+## Claude Model Override
+
+ClawDock still uses Claude Code as the agent harness — the same "best harness, best model" philosophy from NanoClaw. However, ClawDock overrides the default Anthropic API endpoint, routing requests through [Z.AI](https://z.ai) (`ANTHROPIC_BASE_URL=https://api.z.ai/api/anthropic`). This enables per-channel model selection — each channel can run a different model tier based on its workload:
+
+| Channel  | Model  | Use Case |
+| -------- | ------ | -------- |
+| #main    | sonnet | Admin — responds to all messages (no trigger required) |
+| #family  | haiku  | Lightweight family logistics |
+| #devwork | opus   | Engineering work with `~/dev/` mounted read-write |
+| #gamedev | sonnet | Game development with `~/gamedev/` mounted read-write |
+
+Safety limits are enforced per query: **$0.75 budget cap** and **30 turn limit**.
+
+See [docs/CLAUDE-MODEL-OVERRIDE.md](docs/CLAUDE-MODEL-OVERRIDE.md) for full configuration details.
+
+## Deployment
+
+ClawDock is designed for always-on Linux deployment, not laptop-bound development sessions.
+
+**Production** runs on a Linux VM (Ubuntu on Hyper-V) accessible via [Tailscale](https://tailscale.com), managed by a systemd user service:
+
+```bash
+systemctl --user start clawdock
+systemctl --user status clawdock
+journalctl --user -u clawdock -f
+```
+
+**Development** happens on a separate workstation. Push to GitHub, pull on the VM, rebuild, restart:
+
+```
+Dev machine → git push → GitHub → git pull on VM → npm run build → systemctl --user restart clawdock
+```
+
+The service file lives at `~/.config/systemd/user/clawdock.service` and uses `EnvironmentFile` to load `.env` before starting the Node.js process.
 
 ## Quick Start
 
 ```bash
-git clone https://github.com/gavrielc/nanoclaw.git
-cd nanoclaw
+git clone https://github.com/prillcode/clawdock.git
+cd clawdock
 claude
 ```
 
-Then run `/setup`. Claude Code handles everything: dependencies, authentication, container setup, service configuration.
+Then run `/setup` followed by `/convert-to-docker` and `/add-discord`. Claude Code handles dependencies, authentication, container image builds, and service configuration.
 
-## Philosophy
+### Requirements
 
-**Small enough to understand.** One process, a few source files. No microservices, no message queues, no abstraction layers. Have Claude Code walk you through it.
-
-**Secure by isolation.** Agents run in Linux containers (Apple Container on macOS, or Docker). They can only see what's explicitly mounted. Bash access is safe because commands run inside the container, not on your host.
-
-**Built for one user.** This isn't a framework. It's working software that fits my exact needs. You fork it and have Claude Code make it match your exact needs.
-
-**Customization = code changes.** No configuration sprawl. Want different behavior? Modify the code. The codebase is small enough that this is safe.
-
-**AI-native.** No installation wizard; Claude Code guides setup. No monitoring dashboard; ask Claude what's happening. No debugging tools; describe the problem, Claude fixes it.
-
-**Skills over features.** Contributors shouldn't add features (e.g. support for Telegram) to the codebase. Instead, they contribute [claude code skills](https://code.claude.com/docs/en/skills) like `/add-telegram` that transform your fork. You end up with clean code that does exactly what you need.
-
-**Best harness, best model.** This runs on Claude Agent SDK, which means you're running Claude Code directly. The harness matters. A bad harness makes even smart models seem dumb, a good harness gives them superpowers. Claude Code is (IMO) the best harness available.
-
-## What It Supports
-
-- **WhatsApp I/O** - Message Claude from your phone
-- **Isolated group context** - Each group has its own `CLAUDE.md` memory, isolated filesystem, and runs in its own container sandbox with only that filesystem mounted
-- **Main channel** - Your private channel (self-chat) for admin control; every other group is completely isolated
-- **Scheduled tasks** - Recurring jobs that run Claude and can message you back
-- **Web access** - Search and fetch content
-- **Container isolation** - Agents sandboxed in Apple Container (macOS) or Docker (macOS/Linux)
-- **Agent Swarms** - Spin up teams of specialized agents that collaborate on complex tasks (first personal AI assistant to support this)
-- **Optional integrations** - Add Gmail (`/add-gmail`) and more via skills
-
-## Usage
-
-Talk to your assistant with the trigger word (default: `@Andy`):
-
-```
-@Andy send an overview of the sales pipeline every weekday morning at 9am (has access to my Obsidian vault folder)
-@Andy review the git history for the past week each Friday and update the README if there's drift
-@Andy every Monday at 8am, compile news on AI developments from Hacker News and TechCrunch and message me a briefing
-```
-
-From the main channel (your self-chat), you can manage groups and tasks:
-```
-@Andy list all scheduled tasks across groups
-@Andy pause the Monday briefing task
-@Andy join the Family Chat group
-```
-
-## Customizing
-
-There are no configuration files to learn. Just tell Claude Code what you want:
-
-- "Change the trigger word to @Bob"
-- "Remember in the future to make responses shorter and more direct"
-- "Add a custom greeting when I say good morning"
-- "Store conversation summaries weekly"
-
-Or run `/customize` for guided changes.
-
-The codebase is small enough that Claude can safely modify it.
-
-## Contributing
-
-**Don't add features. Add skills.**
-
-If you want to add Telegram support, don't create a PR that adds Telegram alongside WhatsApp. Instead, contribute a skill file (`.claude/skills/add-telegram/SKILL.md`) that teaches Claude Code how to transform a NanoClaw installation to use Telegram.
-
-Users then run `/add-telegram` on their fork and get clean code that does exactly what they need, not a bloated system trying to support every use case.
-
-### RFS (Request for Skills)
-
-Skills we'd love to see:
-
-**Communication Channels**
-- `/add-telegram` - Add Telegram as channel. Should give the user option to replace WhatsApp or add as additional channel. Also should be possible to add it as a control channel (where it can trigger actions) or just a channel that can be used in actions triggered elsewhere
-- `/add-slack` - Add Slack
-- `/add-discord` - Add Discord
-
-**Platform Support**
-- `/setup-windows` - Windows via WSL2 + Docker
-
-**Session Management**
-- `/add-clear` - Add a `/clear` command that compacts the conversation (summarizes context while preserving critical information in the same session). Requires figuring out how to trigger compaction programmatically via the Claude Agent SDK.
-
-## Requirements
-
-- macOS or Linux
+- Linux (Ubuntu recommended) or macOS
 - Node.js 20+
 - [Claude Code](https://claude.ai/download)
-- [Apple Container](https://github.com/apple/container) (macOS) or [Docker](https://docker.com/products/docker-desktop) (macOS/Linux)
+- [Docker](https://docker.com/products/docker-desktop)
+- A Discord bot token ([Discord Developer Portal](https://discord.com/developers/applications))
+
+### Environment Variables
+
+Copy `.env.example` to `.env` and configure:
+
+```bash
+# Discord — set this to activate the Discord channel
+DISCORD_BOT_TOKEN=your-bot-token
+
+# Bot trigger word (also used as display name in agent memory)
+# Default: "Andy"
+ASSISTANT_NAME=YourBotName
+
+# API provider — route through Z.AI or direct to Anthropic
+ANTHROPIC_BASE_URL=https://api.z.ai/api/anthropic
+
+# Safety limits
+BUDGET_LIMIT=0.75
+MAX_TURNS=30
+
+# Optional: WhatsApp auth session also supported (runtime toggle)
+# If both are configured, both channels run in parallel
+```
 
 ## Architecture
 
-```
-WhatsApp (baileys) --> SQLite --> Polling loop --> Container (Claude Agent SDK) --> Response
-```
-
-Single Node.js process. Agents execute in isolated Linux containers with mounted directories. Per-group message queue with concurrency control. IPC via filesystem.
-
 Key files:
-- `src/index.ts` - Orchestrator: state, message loop, agent invocation
-- `src/channels/whatsapp.ts` - WhatsApp connection, auth, send/receive
-- `src/ipc.ts` - IPC watcher and task processing
-- `src/router.ts` - Message formatting and outbound routing
-- `src/group-queue.ts` - Per-group queue with global concurrency limit
-- `src/container-runner.ts` - Spawns streaming agent containers
-- `src/task-scheduler.ts` - Runs scheduled tasks
-- `src/db.ts` - SQLite operations (messages, groups, sessions, state)
-- `groups/*/CLAUDE.md` - Per-group memory
 
-## FAQ
+- `src/index.ts` — Orchestrator: state, message loop, agent invocation
+- `src/channels/discord.ts` — Discord connection, auth, send/receive
+- `src/ipc.ts` — IPC watcher and task processing
+- `src/router.ts` — Message formatting and outbound routing (platform-aware)
+- `src/group-queue.ts` — Per-group queue with global concurrency limit
+- `src/container-runner.ts` — Spawns Docker containers with volume mounts
+- `src/task-scheduler.ts` — Runs scheduled tasks (cron, interval, one-shot)
+- `src/db.ts` — SQLite operations (`store/messages.db`)
+- `groups/*/CLAUDE.md` — Per-channel memory
+- `groups/global/CLAUDE.md` — Shared instructions applied to all channels
 
-**Why WhatsApp and not Telegram/Signal/etc?**
+## What It Supports
 
-Because I use WhatsApp. Fork it and run a skill to change it. That's the whole point.
+- **Discord I/O** — message Claude from any registered Discord channel
+- **Isolated channel context** — each channel has its own `CLAUDE.md` memory, isolated filesystem, and Docker container
+- **Admin channel** — `#main` for system administration; all other channels are sandboxed
+- **Scheduled tasks** — cron, interval, and one-shot jobs that run Claude and can message you back
+- **Web access** — search and fetch content
+- **Container isolation** — agents sandboxed in Docker with explicit filesystem mounts
+- **Agent Swarms** — spin up teams of specialized agents that collaborate on complex tasks
+- **Model override** — per-channel model selection (opus/sonnet/haiku) with configurable API provider routing
+- **Safety limits** — per-query budget cap and turn limit to prevent runaway agent costs
+- **Runtime channel toggle** — Discord and WhatsApp can coexist; environment variables control which channels activate
+- **Optional integrations** — add Gmail (`/add-gmail`) and more via skills
 
-**Why Apple Container instead of Docker?**
+## Customizing
 
-On macOS, Apple Container is lightweight, fast, and optimized for Apple silicon. But Docker is also fully supported—during `/setup`, you can choose which runtime to use. On Linux, Docker is used automatically.
+Tell Claude Code what you want:
 
-**Can I run this on Linux?**
+- "Change the trigger word to @Assistant"
+- "Make responses shorter and more direct"
+- "Add a custom greeting when I say good morning"
+- "Store conversation summaries weekly"
 
-Yes. Run `/setup` and it will automatically configure Docker as the container runtime. Thanks to [@dotsetgreg](https://github.com/dotsetgreg) for contributing the `/convert-to-docker` skill.
+Or run `/customize` for guided changes. The codebase is small enough that Claude can safely modify it.
 
-**Is this secure?**
+## Project Status
 
-Agents run in containers, not behind application-level permission checks. They can only access explicitly mounted directories. You should still review what you're running, but the codebase is small enough that you actually can. See [docs/SECURITY.md](docs/SECURITY.md) for the full security model.
+ClawDock is deployed and running in production with four active Discord channels. See [docs/PROJECT-STATUS.md](docs/PROJECT-STATUS.md) for the full status, infrastructure details, and roadmap.
 
-**Why no configuration files?**
+### ClawDock Web UI (Planned)
 
-We don't want configuration sprawl. Every user should customize it to so that the code matches exactly what they want rather than configuring a generic system. If you like having config files, tell Claude to add them.
+A separate project ([clawdock-web](https://github.com/prillcode/clawdock-web)) will add a browser-based chat interface for ClawDock — talk to any channel from a browser instead of Discord. The stack is React 19 + Vite + Tailwind on Cloudflare Pages, with a Hono API on Cloudflare Workers and D1 for storage. Phase 1 proxies messages through Discord; Phase 2 connects directly to NanoClaw via WebSocket/SSE for real-time streaming.
 
-**How do I debug issues?**
+## Contributing
 
-Ask Claude Code. "Why isn't the scheduler running?" "What's in the recent logs?" "Why did this message not get a response?" That's the AI-native approach.
+Following NanoClaw's philosophy: **don't add features, add skills.**
 
-**Why isn't the setup working for me?**
+Want to add Telegram support? Don't create a PR that adds Telegram alongside Discord. Instead, contribute a skill file (`.claude/skills/add-telegram/SKILL.md`) that teaches Claude Code how to transform an installation. Users then run `/add-telegram` on their fork and get clean code that does exactly what they need.
 
-I don't know. Run `claude`, then run `/debug`. If claude finds an issue that is likely affecting other users, open a PR to modify the setup SKILL.md.
+## Upstream Relationship
 
-**What changes will be accepted into the codebase?**
+ClawDock tracks [qwibitai/nanoclaw](https://github.com/qwibitai/nanoclaw) as an upstream remote for pulling bug fixes and security patches:
 
-Security fixes, bug fixes, and clear improvements to the base configuration. That's it.
+```bash
+git remote add upstream https://github.com/qwibitai/nanoclaw.git
+git fetch upstream
+git merge upstream/main
+```
 
-Everything else (new capabilities, OS compatibility, hardware support, enhancements) should be contributed as skills.
-
-This keeps the base system minimal and lets every user customize their installation without inheriting features they don't want.
-
-## Community
-
-Questions? Ideas? [Join the Discord](https://discord.gg/VGWXrf8x).
+Internal code references (config paths, TypeScript source) use the `nanoclaw` naming convention to minimize merge conflicts with upstream. Only user-facing documentation uses "ClawDock" branding.
 
 ## License
 
 MIT
+
+---
+
+### Credits
+
+ClawDock is a fork of [NanoClaw](https://github.com/qwibitai/nanoclaw) by [Gavriel Cohen](https://github.com/gavrielc) and contributors. NanoClaw was inspired by [OpenClaw](https://github.com/openclaw/openclaw) (formerly Clawdbot), built by [Peter Steinberger](https://github.com/steipete) and the community.
+

@@ -539,23 +539,39 @@ async function main(): Promise<void> {
 
     // Auto-register Discord channels from DISCORD_CHANNELS config
     for (const ch of DISCORD_CHANNELS) {
-      if (!registeredGroups[ch.id]) {
-        // Resolve model: per-channel override > global default
-        const model = AGENT_CHANNEL_MODELS[ch.folder] || AGENT_MODEL;
+      // Resolve model: per-channel override > global default
+      const model = AGENT_CHANNEL_MODELS[ch.folder] || AGENT_MODEL;
 
+      const updatedConfig = {
+        name: ch.name,
+        folder: ch.folder,
+        trigger: ch.requiresTrigger ? `@${ASSISTANT_NAME}` : '@mention',
+        requiresTrigger: ch.requiresTrigger,
+        containerConfig: {
+          model,
+          maxBudgetUsd: AGENT_MAX_BUDGET_USD,
+          maxTurns: AGENT_MAX_TURNS,
+          maxThinkingTokens: AGENT_MAX_THINKING_TOKENS,
+        },
+      };
+
+      if (!registeredGroups[ch.id]) {
         registerGroup(ch.id, {
-          name: ch.name,
-          folder: ch.folder,
-          trigger: ch.requiresTrigger ? `@${ASSISTANT_NAME}` : '@mention',
+          ...updatedConfig,
           added_at: new Date().toISOString(),
-          requiresTrigger: ch.requiresTrigger,
-          containerConfig: {
-            model,
-            maxBudgetUsd: AGENT_MAX_BUDGET_USD,
-            maxTurns: AGENT_MAX_TURNS,
-            maxThinkingTokens: AGENT_MAX_THINKING_TOKENS,
-          },
         });
+      } else {
+        // Update existing group configuration (e.g., trigger name change)
+        registeredGroups[ch.id] = {
+          ...registeredGroups[ch.id],
+          ...updatedConfig,
+          added_at: registeredGroups[ch.id].added_at, // Preserve original add date
+        };
+        setRegisteredGroup(ch.id, registeredGroups[ch.id]);
+        logger.info(
+          { jid: ch.id, name: ch.name, trigger: updatedConfig.trigger },
+          'Discord group configuration updated',
+        );
       }
     }
   }

@@ -1,10 +1,10 @@
-# Prillbot — Main Channel
+# ClawDock — Main Channel
 
 This is the **main channel**, which has elevated privileges. All messages here are processed automatically (no @mention needed).
 
 ## Admin Capabilities
 
-- Full project filesystem access (can modify NanoClaw itself)
+- Full project filesystem access (can modify ClawDock itself)
 - Manage other groups (register/unregister channels)
 - Schedule tasks for any channel
 - View and query the message database
@@ -91,7 +91,7 @@ Fields:
 
 - **Main group**: No trigger needed — all messages are processed automatically
 - **Groups with `requires_trigger: 0`**: No trigger needed — all messages processed
-- **Other groups** (default): Messages must contain `@Prillbot` to be processed
+- **Other groups** (default): Messages must contain `@AssistantName` to be processed
 
 ### Adding a Group
 
@@ -104,7 +104,7 @@ cat > /workspace/ipc/tasks/register_$(date +%s).json << 'EOF'
   "jid": "CHANNEL_SNOWFLAKE_ID",
   "name": "Channel Name",
   "folder": "channel-name",
-  "trigger": "@Prillbot"
+  "trigger": "@AssistantName"
 }
 EOF
 ```

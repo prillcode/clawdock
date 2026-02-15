@@ -1,6 +1,6 @@
 # Family Channel
 
-This is the **#family** Discord channel. You are activated when someone tags `@Prillbot`.
+This is the **#family** Discord channel. You are activated when someone tags `@AssistantName`.
 
 ## Tone & Style
 
