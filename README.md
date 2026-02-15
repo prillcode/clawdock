@@ -85,8 +85,10 @@ ClawDock is designed for always-on Linux deployment, not laptop-bound developmen
 ```bash
 systemctl --user start clawdock
 systemctl --user status clawdock
-journalctl --user -u clawdock -f
+journalctl --user -u clawdock -f 
 ```
+
+![clawdock service terminal](clawdock-service-terminal.png)
 
 **Development** happens on a separate workstation. Push to GitHub, pull on the VM, rebuild, restart:
 
