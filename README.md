@@ -88,7 +88,7 @@ systemctl --user status clawdock
 journalctl --user -u clawdock -f 
 ```
 
-![clawdock service terminal](clawdock-service-terminal.png)
+![clawdock service terminal](assets/clawdock-service-terminal.png)
 
 **Development** happens on a separate workstation. Push to GitHub, pull on the VM, rebuild, restart:
 
