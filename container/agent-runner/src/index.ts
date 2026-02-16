@@ -10,8 +10,9 @@
  *
  * Stdout protocol:
  *   Each result is wrapped in OUTPUT_START_MARKER / OUTPUT_END_MARKER pairs.
- *   Multiple results may be emitted (one per agent teams result).
- *   Final marker after loop ends signals completion.
+ *   Multiple results may be emitted (one per user turn / agent teams result).
+ *   A single long-lived query() call processes all messages; follow-ups are
+ *   fed via MessageStream to avoid session replay overhead.
  */
 
 import fs from 'fs';
@@ -341,55 +342,30 @@ function drainIpcInput(): string[] {
 }
 
 /**
- * Wait for a new IPC message or _close sentinel.
- * Returns the messages as a single string, or null if _close.
- */
-function waitForIpcMessage(): Promise<string | null> {
-  return new Promise((resolve) => {
-    const poll = () => {
-      if (shouldClose()) {
-        resolve(null);
-        return;
-      }
-      const messages = drainIpcInput();
-      if (messages.length > 0) {
-        resolve(messages.join('\n'));
-        return;
-      }
-      setTimeout(poll, IPC_POLL_MS);
-    };
-    poll();
-  });
-}
-
-/**
- * Run a single query and stream results via writeOutput.
- * Uses MessageStream (AsyncIterable) to keep isSingleUserTurn=false,
- * allowing agent teams subagents to run to completion.
- * Also pipes IPC messages into the stream during the query.
+ * Run a single long-lived query that stays open for the container's lifetime.
+ * Uses MessageStream to feed follow-up messages into the same SDK session
+ * without needing to resume (which would replay the entire history).
+ *
+ * The stream stays open until _close sentinel is received via IPC,
+ * allowing the SDK to process multiple user turns in a single query call.
  */
 async function runQuery(
   prompt: string,
   sessionId: string | undefined,
   mcpServerPath: string,
   containerInput: ContainerInput,
-  resumeAt?: string,
 ): Promise<{
   newSessionId?: string;
-  lastAssistantUuid?: string;
-  closedDuringQuery: boolean;
 }> {
   const stream = new MessageStream();
   stream.push(prompt);
 
-  // Poll IPC for follow-up messages and _close sentinel during the query
+  // Poll IPC for follow-up messages and _close sentinel for the lifetime of the query
   let ipcPolling = true;
-  let closedDuringQuery = false;
-  const pollIpcDuringQuery = () => {
+  const pollIpc = () => {
     if (!ipcPolling) return;
     if (shouldClose()) {
-      log('Close sentinel detected during query, ending stream');
-      closedDuringQuery = true;
+      log('Close sentinel detected, ending stream');
       stream.end();
       ipcPolling = false;
       return;
@@ -399,12 +375,11 @@ async function runQuery(
       log(`Piping IPC message into active query (${text.length} chars)`);
       stream.push(text);
     }
-    setTimeout(pollIpcDuringQuery, IPC_POLL_MS);
+    setTimeout(pollIpc, IPC_POLL_MS);
   };
-  setTimeout(pollIpcDuringQuery, IPC_POLL_MS);
+  setTimeout(pollIpc, IPC_POLL_MS);
 
   let newSessionId: string | undefined;
-  let lastAssistantUuid: string | undefined;
   let messageCount = 0;
   let resultCount = 0;
 
@@ -441,7 +416,6 @@ async function runQuery(
       cwd: '/workspace/group',
       additionalDirectories: extraDirs.length > 0 ? extraDirs : undefined,
       resume: sessionId,
-      resumeSessionAt: resumeAt,
       systemPrompt: globalClaudeMd
         ? {
             type: 'preset' as const,
@@ -501,10 +475,6 @@ async function runQuery(
         : message.type;
     log(`[msg #${messageCount}] type=${msgType}`);
 
-    if (message.type === 'assistant' && 'uuid' in message) {
-      lastAssistantUuid = (message as { uuid: string }).uuid;
-    }
-
     if (message.type === 'system' && message.subtype === 'init') {
       newSessionId = message.session_id;
       log(`Session initialized: ${newSessionId}`);
@@ -540,10 +510,8 @@ async function runQuery(
   }
 
   ipcPolling = false;
-  log(
-    `Query done. Messages: ${messageCount}, results: ${resultCount}, lastAssistantUuid: ${lastAssistantUuid || 'none'}, closedDuringQuery: ${closedDuringQuery}`,
-  );
-  return { newSessionId, lastAssistantUuid, closedDuringQuery };
+  log(`Query done. Messages: ${messageCount}, results: ${resultCount}`);
+  return { newSessionId };
 }
 
 async function main(): Promise<void> {
@@ -586,51 +554,25 @@ async function main(): Promise<void> {
     prompt += '\n' + pending.join('\n');
   }
 
-  // Query loop: run query → wait for IPC message → run new query → repeat
-  let resumeAt: string | undefined;
+  // Single long-lived query: follow-up messages are piped via MessageStream,
+  // so the SDK processes them as additional user turns without replaying history.
+  // The query stays alive until _close sentinel is received via IPC.
   try {
-    while (true) {
-      log(
-        `Starting query (session: ${sessionId || 'new'}, resumeAt: ${resumeAt || 'latest'})...`,
-      );
+    log(`Starting query (session: ${sessionId || 'new'})...`);
 
-      const queryResult = await runQuery(
-        prompt,
-        sessionId,
-        mcpServerPath,
-        containerInput,
-        resumeAt,
-      );
-      if (queryResult.newSessionId) {
-        sessionId = queryResult.newSessionId;
-      }
-      if (queryResult.lastAssistantUuid) {
-        resumeAt = queryResult.lastAssistantUuid;
-      }
-
-      // If _close was consumed during the query, exit immediately.
-      // Don't emit a session-update marker (it would reset the host's
-      // idle timer and cause a 30-min delay before the next _close).
-      if (queryResult.closedDuringQuery) {
-        log('Close sentinel consumed during query, exiting');
-        break;
-      }
-
-      // Emit session update so host can track it
-      writeOutput({ status: 'success', result: null, newSessionId: sessionId });
-
-      log('Query ended, waiting for next IPC message...');
-
-      // Wait for the next message or _close sentinel
-      const nextMessage = await waitForIpcMessage();
-      if (nextMessage === null) {
-        log('Close sentinel received, exiting');
-        break;
-      }
-
-      log(`Got new message (${nextMessage.length} chars), starting new query`);
-      prompt = nextMessage;
+    const queryResult = await runQuery(
+      prompt,
+      sessionId,
+      mcpServerPath,
+      containerInput,
+    );
+    if (queryResult.newSessionId) {
+      sessionId = queryResult.newSessionId;
     }
+
+    // Emit final session update
+    writeOutput({ status: 'success', result: null, newSessionId: sessionId });
+    log('Query ended');
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);
     log(`Agent error: ${errorMessage}`);
