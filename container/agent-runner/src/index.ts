@@ -416,7 +416,10 @@ async function runQuery(
     options: {
       cwd: '/workspace/group',
       additionalDirectories: extraDirs.length > 0 ? extraDirs : undefined,
-      resume: sessionId,
+      // NOTE: Do NOT use resume with MessageStream. The resume option causes the SDK
+      // to replay the full transcript on each new message from the stream. Instead,
+      // we rely on session summary injection (see lines 551-553) for cross-container
+      // context, and MessageStream for multi-turn within a single container lifetime.
       systemPrompt: globalClaudeMd
         ? {
             type: 'preset' as const,
