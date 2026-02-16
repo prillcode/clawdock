@@ -15,6 +15,7 @@ import {
   IDLE_TIMEOUT,
   MAIN_GROUP_FOLDER,
   POLL_INTERVAL,
+  SESSION_MAX_RESUME_TOKENS,
   STORE_DIR,
   TRIGGER_PATTERN,
 } from './config.js';
@@ -27,6 +28,7 @@ import {
   writeTasksSnapshot,
 } from './container-runner.js';
 import {
+  deleteSession,
   getAllChats,
   getAllRegisteredGroups,
   getAllSessions,
@@ -34,12 +36,15 @@ import {
   getMessagesSince,
   getNewMessages,
   getRouterState,
+  getSessionMetrics,
+  getSessionSummary,
   initDatabase,
   setRegisteredGroup,
   setRouterState,
   setSession,
   storeChatMetadata,
   storeMessage,
+  updateSessionMetrics,
 } from './db.js';
 import { GroupQueue } from './group-queue.js';
 import { startIpcWatcher } from './ipc.js';
@@ -50,7 +55,8 @@ import {
   routeOutbound,
 } from './router.js';
 import {
-  calculateSessionMetrics,
+  checkSessionThresholds,
+  estimateTokens,
   generateAutoResetMessage,
   generateContextWarning,
 } from './session-manager.js';
@@ -193,6 +199,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
   if (channel?.setTyping) await channel.setTyping(chatJid, true);
   let hadError = false;
   let outputSentToUser = false;
+  let totalResponseTokens = 0; // Phase 1: Track response tokens for incremental metrics
 
   const output = await runAgent(group, prompt, chatJid, async (result) => {
     // Streaming output callback — called for each agent result
@@ -202,6 +209,10 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
           ? result.result
           : JSON.stringify(result.result);
       logger.info({ group: group.name }, `Agent output: ${raw.slice(0, 200)}`);
+
+      // Phase 1: Accumulate response tokens
+      totalResponseTokens += estimateTokens(raw);
+
       if (channel) {
         const text = formatOutbound(channel, raw);
         if (text) {
@@ -241,66 +252,59 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     return false;
   }
 
-  // Check context usage and handle warnings/auto-reset
+  // Phase 1: Incremental token tracking
+  // Update session metrics after successful response
   if (outputSentToUser && channel) {
     try {
-      // Get recent messages for context estimation (limit to last 1000 to avoid performance issues)
-      // TODO: Track actual token count in session state instead of fetching all messages
-      const allMessages = getMessagesSince(chatJid, '', ASSISTANT_NAME);
-      // Limit to prevent performance issues with very long conversations
-      const recentMessages = allMessages.slice(-1000);
-      const conversationHistory = recentMessages.map((m) => m.content);
+      // Estimate tokens for the prompt and response (incremental)
+      const promptTokens = estimateTokens(prompt);
+      updateSessionMetrics(group.folder, promptTokens + totalResponseTokens, 1);
 
-      // Calculate metrics based on current model
+      // Check thresholds based on stored metrics (no message re-fetch needed)
+      const storedMetrics = getSessionMetrics(group.folder);
       const model = group.containerConfig?.model || AGENT_MODEL;
-      const metrics = calculateSessionMetrics(conversationHistory, model);
+      const thresholds = checkSessionThresholds(storedMetrics, model);
 
-      // Auto-reset at 100% with summary
-      if (metrics.shouldAutoReset) {
+      // Phase 2: Auto-reset at 90% with summary
+      if (thresholds.shouldAutoReset) {
         logger.warn(
           {
             group: group.name,
-            estimatedTokens: metrics.estimatedTokens,
+            estimatedTokens: thresholds.estimatedTokens,
           },
-          'Context reached 100% - triggering automatic reset with summary',
+          'Context reached 90% - triggering automatic reset with summary',
         );
 
-        // Generate summary of current conversation
-        const summaryPrompt = `Please provide a concise summary of our conversation including:
-- Key accomplishments
-- Current state/progress  
-- Next steps or open questions
-
-Keep it brief (2-3 paragraphs max).`;
-
-        // This will be handled by triggering a summary request
-        // The actual reset happens via IPC after summary is generated
+        // Notify user
         await channel.sendMessage(
           chatJid,
-          `⚠️ Context window reached 100%. Generating summary and resetting session...`,
+          `⚠️ Session context at 90% — generating summary and starting fresh session...`,
         );
 
-        // Request summary generation and reset (Willis will handle this)
-        // Note: This is a simplified approach - in production you'd want to
-        // actually call the agent to generate the summary before resetting
-        const autoResetMessage = generateAutoResetMessage();
-        await channel.sendMessage(chatJid, autoResetMessage);
+        // Send a message to trigger the agent to generate a summary and reset
+        // The agent will use the new_chat_session_with_summary MCP tool
+        const summaryRequest = `Please use the new_chat_session_with_summary tool to generate a concise summary of our conversation and start a new session. Include:
+- Key accomplishments
+- Current state/progress
+- Next steps or open questions
 
-        // Trigger reset via IPC (will be processed after this message completes)
-        // TODO: Implement actual summary generation before reset
+Keep the summary brief (2-3 paragraphs max).`;
+
+        await channel.sendMessage(chatJid, summaryRequest);
+
         logger.info(
           { group: group.name },
-          'Automatic session reset triggered at 100%',
+          'Automatic session reset requested at 90%',
         );
-      } else if (metrics.shouldWarn) {
+      } else if (thresholds.shouldWarn) {
         // Send warning at 80%
-        const warning = generateContextWarning(metrics);
+        const warning = generateContextWarning(thresholds);
         await channel.sendMessage(chatJid, warning);
         logger.info(
           {
             group: group.name,
-            estimatedTokens: metrics.estimatedTokens,
-            percentageUsed: (metrics.percentageUsed * 100).toFixed(1) + '%',
+            estimatedTokens: thresholds.estimatedTokens,
+            percentageUsed: (thresholds.percentageUsed * 100).toFixed(1) + '%',
           },
           'Sent context warning to user',
         );
@@ -309,7 +313,7 @@ Keep it brief (2-3 paragraphs max).`;
       // Don't fail the entire message processing if context check fails
       logger.warn(
         { error, group: group.name },
-        'Failed to check context usage',
+        'Failed to update session metrics',
       );
     }
   }
@@ -324,7 +328,27 @@ async function runAgent(
   onOutput?: (output: ContainerOutput) => Promise<void>,
 ): Promise<'success' | 'error'> {
   const isMain = group.folder === MAIN_GROUP_FOLDER;
-  const sessionId = sessions[group.folder];
+  let sessionId: string | undefined = sessions[group.folder];
+
+  // Phase 3: Resume guard - skip resume if session is too large
+  if (sessionId) {
+    const metrics = getSessionMetrics(group.folder);
+    if (metrics && metrics.estimated_tokens > SESSION_MAX_RESUME_TOKENS) {
+      logger.info(
+        {
+          group: group.name,
+          tokens: metrics.estimated_tokens,
+          threshold: SESSION_MAX_RESUME_TOKENS,
+        },
+        'Session too large to resume efficiently, starting fresh',
+      );
+      deleteSession(group.folder);
+      delete sessions[group.folder];
+      sessionId = undefined;
+      // Note: The agent will see the session summary (if available) but start
+      // with a fresh SDK session to avoid slow resume.
+    }
+  }
 
   // Update tasks snapshot for container to read (filtered by group)
   const tasks = getAllTasks();
@@ -363,11 +387,15 @@ async function runAgent(
     : undefined;
 
   try {
+    // Phase 2: Retrieve session summary if available (will be injected in agent-runner)
+    const sessionSummary = getSessionSummary(group.folder);
+
     const output = await runContainerAgent(
       group,
       {
         prompt,
         sessionId,
+        sessionSummary: sessionSummary || undefined,
         groupFolder: group.folder,
         chatJid,
         isMain,

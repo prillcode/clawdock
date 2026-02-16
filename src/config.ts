@@ -153,6 +153,23 @@ export function parseChannelModelOverrides(): Record<string, string> {
 
 export const AGENT_CHANNEL_MODELS = parseChannelModelOverrides();
 
+// Phase 3: Session management config (Smart Session Management Plan)
+// Max tokens before skipping session resume (default: 100,000 = ~50% of context)
+export const SESSION_MAX_RESUME_TOKENS = parseInt(
+  process.env.SESSION_MAX_RESUME_TOKENS || '100000',
+  10,
+);
+
+// Warning threshold (default: 0.8 = 80%)
+export const SESSION_WARNING_THRESHOLD = parseFloat(
+  process.env.SESSION_WARNING_THRESHOLD || '0.8',
+);
+
+// Auto-reset threshold (default: 0.9 = 90%)
+export const SESSION_AUTO_RESET_THRESHOLD = parseFloat(
+  process.env.SESSION_AUTO_RESET_THRESHOLD || '0.9',
+);
+
 // Timezone for scheduled tasks (cron expressions, etc.)
 // Uses system timezone by default
 export const TIMEZONE =

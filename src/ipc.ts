@@ -17,6 +17,7 @@ import {
   deleteSession,
   deleteTask,
   getTaskById,
+  setSessionSummary,
   updateTask,
 } from './db.js';
 import { logger } from './logger.js';
@@ -468,6 +469,10 @@ export async function processTaskIpc(
 
           // Save session summary if provided
           if (withSummary && sessionSummary) {
+            // Phase 2: Store summary in DB for next container to inject
+            setSessionSummary(data.groupFolder, sessionSummary);
+
+            // Also save to file for backwards compatibility / user reference
             const summaryPath = path.join(
               GROUPS_DIR,
               data.groupFolder,
@@ -476,7 +481,7 @@ export async function processTaskIpc(
             fs.writeFileSync(summaryPath, sessionSummary, 'utf-8');
             logger.info(
               { groupFolder: data.groupFolder },
-              'Session summary saved',
+              'Session summary saved to DB and file',
             );
           } else if (data.type === 'new_chat_session_fresh') {
             // Clear session summary for fresh start

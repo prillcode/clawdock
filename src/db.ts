@@ -87,6 +87,37 @@ function createSchema(database: Database.Database): void {
   } catch {
     /* column already exists */
   }
+
+  // Add session metrics columns (Phase 1: Smart Session Management)
+  try {
+    database.exec(
+      `ALTER TABLE sessions ADD COLUMN estimated_tokens INTEGER DEFAULT 0`,
+    );
+  } catch {
+    /* column already exists */
+  }
+  try {
+    database.exec(
+      `ALTER TABLE sessions ADD COLUMN message_count INTEGER DEFAULT 0`,
+    );
+  } catch {
+    /* column already exists */
+  }
+  try {
+    database.exec(`ALTER TABLE sessions ADD COLUMN created_at TEXT`);
+  } catch {
+    /* column already exists */
+  }
+  try {
+    database.exec(`ALTER TABLE sessions ADD COLUMN last_active TEXT`);
+  } catch {
+    /* column already exists */
+  }
+  try {
+    database.exec(`ALTER TABLE sessions ADD COLUMN last_summary TEXT`);
+  } catch {
+    /* column already exists */
+  }
 }
 
 export function initDatabase(): void {
@@ -461,6 +492,66 @@ export function getAllSessions(): Record<string, string> {
     result[row.group_folder] = row.session_id;
   }
   return result;
+}
+
+// --- Session metrics accessors (Phase 1: Smart Session Management) ---
+
+export interface SessionMetrics {
+  estimated_tokens: number;
+  message_count: number;
+  created_at: string | null;
+  last_active: string | null;
+}
+
+export function getSessionMetrics(groupFolder: string): SessionMetrics | null {
+  const row = db
+    .prepare(
+      'SELECT estimated_tokens, message_count, created_at, last_active FROM sessions WHERE group_folder = ?',
+    )
+    .get(groupFolder) as SessionMetrics | undefined;
+  return row || null;
+}
+
+export function updateSessionMetrics(
+  groupFolder: string,
+  tokenDelta: number,
+  messageDelta: number,
+): void {
+  const now = new Date().toISOString();
+
+  // Get current values or initialize if session doesn't exist
+  const current = getSessionMetrics(groupFolder);
+  const newTokens = (current?.estimated_tokens || 0) + tokenDelta;
+  const newMessages = (current?.message_count || 0) + messageDelta;
+  const createdAt = current?.created_at || now;
+
+  db.prepare(
+    `UPDATE sessions 
+     SET estimated_tokens = ?, message_count = ?, last_active = ?, created_at = ?
+     WHERE group_folder = ?`,
+  ).run(newTokens, newMessages, now, createdAt, groupFolder);
+}
+
+export function resetSessionMetrics(groupFolder: string): void {
+  db.prepare(
+    `UPDATE sessions 
+     SET estimated_tokens = 0, message_count = 0, created_at = NULL, last_active = NULL, last_summary = NULL
+     WHERE group_folder = ?`,
+  ).run(groupFolder);
+}
+
+export function getSessionSummary(groupFolder: string): string | null {
+  const row = db
+    .prepare('SELECT last_summary FROM sessions WHERE group_folder = ?')
+    .get(groupFolder) as { last_summary: string | null } | undefined;
+  return row?.last_summary || null;
+}
+
+export function setSessionSummary(groupFolder: string, summary: string): void {
+  db.prepare('UPDATE sessions SET last_summary = ? WHERE group_folder = ?').run(
+    summary,
+    groupFolder,
+  );
 }
 
 // --- Registered group accessors ---

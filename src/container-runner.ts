@@ -71,6 +71,7 @@ function getHomeDir(): string {
 export interface ContainerInput {
   prompt: string;
   sessionId?: string;
+  sessionSummary?: string; // Phase 2: Summary from previous session to inject
   groupFolder: string;
   chatJid: string;
   isMain: boolean;

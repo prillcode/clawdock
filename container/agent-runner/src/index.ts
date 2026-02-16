@@ -27,6 +27,7 @@ import { fileURLToPath } from 'url';
 interface ContainerInput {
   prompt: string;
   sessionId?: string;
+  sessionSummary?: string; // Phase 2: Summary from previous session to inject
   groupFolder: string;
   chatJid: string;
   isMain: boolean;
@@ -545,6 +546,13 @@ async function main(): Promise<void> {
 
   // Build initial prompt (drain any pending IPC messages too)
   let prompt = containerInput.prompt;
+
+  // Phase 2: Inject session summary if available
+  if (containerInput.sessionSummary) {
+    prompt = `[Previous Session Summary]\n${containerInput.sessionSummary}\n\n---\n\n${prompt}`;
+    log('Session summary injected into initial prompt');
+  }
+
   if (containerInput.isScheduledTask) {
     prompt = `[SCHEDULED TASK - The following message was sent automatically and is not coming directly from the user or group.]\n\n${prompt}`;
   }

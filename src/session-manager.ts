@@ -17,7 +17,7 @@ const MODEL_CONTEXT_WINDOWS: Record<string, number> = {
 
 const DEFAULT_CONTEXT_WINDOW = 200000;
 const WARNING_THRESHOLD = 0.8; // 80%
-const AUTO_RESET_THRESHOLD = 1.0; // 100%
+const AUTO_RESET_THRESHOLD = 0.9; // 90% (changed from 1.0 - gives agent headroom to generate summary)
 
 export interface SessionMetrics {
   estimatedTokens: number;
@@ -31,7 +31,7 @@ export interface SessionMetrics {
  * Estimate token count from message content
  * Rough approximation: 1 token ≈ 4 characters
  */
-function estimateTokens(text: string): number {
+export function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
 }
 
@@ -99,7 +99,43 @@ Start a new session anytime by telling ${ASSISTANT_NAME}:
 export function generateAutoResetMessage(): string {
   return `🔄 **Automatic Session Reset**
 
-This chat session reached 100% of the context window. I've automatically started a new session with a summary of our previous discussion saved to session-summary.md.
+This chat session reached 90% of the context window. I've automatically started a new session with a summary of our previous discussion.
 
 You can reference the full archive at: /workspace/group/conversations/archive/ if needed.`;
+}
+
+/**
+ * Check session thresholds based on stored metrics (Phase 1: Smart Session Management)
+ * This replaces the message re-fetch approach with incremental tracking.
+ */
+export function checkSessionThresholds(
+  metrics: { estimated_tokens: number; message_count: number } | null,
+  model?: string,
+): SessionMetrics {
+  const estimatedTokens = metrics?.estimated_tokens || 0;
+  const contextWindow = getContextWindow(model);
+  const percentageUsed = estimatedTokens / contextWindow;
+  const shouldWarn =
+    percentageUsed >= WARNING_THRESHOLD &&
+    percentageUsed < AUTO_RESET_THRESHOLD;
+  const shouldAutoReset = percentageUsed >= AUTO_RESET_THRESHOLD;
+
+  logger.debug(
+    {
+      estimatedTokens,
+      contextWindow,
+      percentageUsed: (percentageUsed * 100).toFixed(1) + '%',
+      shouldWarn,
+      shouldAutoReset,
+    },
+    'Session thresholds checked (incremental)',
+  );
+
+  return {
+    estimatedTokens,
+    contextWindow,
+    percentageUsed,
+    shouldWarn,
+    shouldAutoReset,
+  };
 }
