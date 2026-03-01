@@ -1,333 +1,217 @@
----
-name: add-discord
-description: Add Discord as a messaging channel. Both WhatsApp and Discord implementations remain in the codebase — which channels are active at runtime is controlled by environment configuration.
----
-
 # Add Discord Channel
 
-This skill adds Discord as a messaging channel to a NanoClaw installation. Both WhatsApp and Discord implementations will exist in the codebase, but which channels are active at runtime is determined by environment configuration:
+This skill adds Discord support to NanoClaw using the skills engine for deterministic code changes, then walks through interactive setup.
 
-- `DISCORD_BOT_TOKEN` is set → Discord channel starts
-- WhatsApp auth session exists → WhatsApp channel starts
-- Both configured → both channels run in parallel
-- Neither configured → error on startup
+## Phase 1: Pre-flight
 
-This means the operator chooses which channels to run by setting environment variables and configuring auth — no code changes needed. Forkers of this repo can use WhatsApp only, Discord only, or both without modifying source.
+### Check if already applied
 
-## Prerequisites
+Read `.nanoclaw/state.yaml`. If `discord` is in `applied_skills`, skip to Phase 3 (Setup). The code changes are already in place.
 
-- A Discord Bot Token (from https://discord.com/developers/applications)
-- The bot must have the following permissions/intents enabled:
-  - **Privileged Gateway Intents:** Message Content Intent, Server Members Intent
-  - **Bot Permissions:** Send Messages, Read Message History, Add Reactions, Use Slash Commands
-  - The bot must be invited to the target Discord server with these permissions
+### Ask the user
 
-## Questions to Ask
+Use `AskUserQuestion` to collect configuration:
 
-Before making changes, ask the user:
+AskUserQuestion: Should Discord replace WhatsApp or run alongside it?
+- **Replace WhatsApp** - Discord will be the only channel (sets DISCORD_ONLY=true)
+- **Alongside** - Both Discord and WhatsApp channels active
 
-1. **Trigger pattern?** "Should Discord use the same trigger pattern (e.g., @Andy), or should the bot respond to Discord @mentions of the bot user automatically?"
-   - Recommended default: Respond to Discord @mentions of the bot (most natural for Discord)
-   - Alternative: Keep a text-based trigger word like the WhatsApp default
+AskUserQuestion: Do you have a Discord bot token, or do you need to create one?
 
-2. **Main channel?** "Which Discord channel should be the privileged main/admin channel? This is typically a private channel only you can see."
-   - The main channel gets elevated privileges: registering groups, managing tasks across all groups, full project filesystem access
-   - If the user also runs WhatsApp, they may have a separate WhatsApp main channel — either or both can serve as admin channels
+If they have one, collect it now. If not, we'll create one in Phase 3.
 
-3. **Channel registration?** "Do you want to pre-register specific Discord channels as groups now, or register them later via the main channel?"
-   - If now: Ask for channel names and their intended purposes
-   - If later: The user can register channels at runtime via the main channel
+## Phase 2: Apply Code Changes
 
-## Implementation Steps
+Run the skills engine to apply this skill's code package. The package files are in this directory alongside this SKILL.md.
 
-### Step 1: Install Dependencies
+### Initialize skills system (if needed)
+
+If `.nanoclaw/` directory doesn't exist yet:
 
 ```bash
-npm install discord.js
+npx tsx scripts/apply-skill.ts --init
 ```
 
-Keep all existing WhatsApp/Baileys dependencies intact.
+Or call `initSkillsSystem()` from `skills-engine/migrate.ts`.
 
-### Step 2: Create src/channels/discord.ts
-
-Create a new file `src/channels/discord.ts` with the Discord connection logic. This file should handle:
-
-- **Client initialization**: Create a discord.js `Client` with the `GatewayIntentBits.Guilds`, `GatewayIntentBits.GuildMessages`, and `GatewayIntentBits.MessageContent` intents
-- **Message handling**: Listen for the `messageCreate` event. Ignore messages from the bot itself. Check for the trigger pattern (bot mention or text trigger). Extract: channel ID, message author ID, author display name, message content (strip the bot mention if used as trigger), timestamp, and whether the message is in a guild channel
-- **Send message function**: Export an async function `sendDiscordMessage(channelId: string, text: string)` that sends a message to a Discord channel. Handle Discord's 2000-character message limit by splitting long responses into multiple messages. Preserve code blocks when splitting
-- **Typing indicator**: Export an async function `setDiscordTyping(channelId: string)` that calls `channel.sendTyping()`. Note: Discord typing indicators last 10 seconds and must be refreshed for longer operations
-- **Ready event**: Log when the bot connects and print the bot's username and the servers it's in
-- **Error handling**: Handle disconnects and reconnection gracefully. discord.js handles reconnection automatically, but log events for debugging
-
-Example structure:
-
-```typescript
-import { Client, GatewayIntentBits, Message, TextChannel, ChannelType } from 'discord.js';
-
-const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
-  ],
-});
-
-// Store the message handler callback - set by the orchestrator
-let onMessageCallback: ((msg: {
-  channelId: string;
-  authorId: string;
-  authorName: string;
-  content: string;
-  timestamp: number;
-  isGuild: boolean;
-}) => void) | null = null;
-
-export function onMessage(callback: typeof onMessageCallback) {
-  onMessageCallback = callback;
-}
-
-client.on('messageCreate', async (message: Message) => {
-  if (message.author.bot) return;
-
-  // Check trigger: bot mention or text pattern
-  const botMention = `<@${client.user?.id}>`;
-  const isMentioned = message.content.includes(botMention);
-
-  // Also check text trigger pattern from config
-  const triggerMatch = message.content.match(TRIGGER_PATTERN);
-
-  if (!isMentioned && !triggerMatch) return;
-
-  // Strip the mention/trigger from content
-  let content = message.content;
-  if (isMentioned) {
-    content = content.replace(botMention, '').trim();
-  } else if (triggerMatch) {
-    content = content.replace(triggerMatch[0], '').trim();
-  }
-
-  if (onMessageCallback) {
-    onMessageCallback({
-      channelId: message.channelId,
-      authorId: message.author.id,
-      authorName: message.member?.displayName || message.author.username,
-      content,
-      timestamp: message.createdTimestamp,
-      isGuild: message.guild !== null,
-    });
-  }
-});
-
-export async function sendDiscordMessage(channelId: string, text: string) {
-  const channel = await client.channels.fetch(channelId);
-  if (!channel || channel.type !== ChannelType.GuildText) return;
-
-  // Discord has a 2000 char limit per message
-  const MAX_LENGTH = 2000;
-  if (text.length <= MAX_LENGTH) {
-    await (channel as TextChannel).send(text);
-    return;
-  }
-
-  // Split long messages, trying to break at newlines
-  let remaining = text;
-  while (remaining.length > 0) {
-    let chunk: string;
-    if (remaining.length <= MAX_LENGTH) {
-      chunk = remaining;
-      remaining = '';
-    } else {
-      let splitIndex = remaining.lastIndexOf('\n', MAX_LENGTH);
-      if (splitIndex === -1 || splitIndex < MAX_LENGTH / 2) {
-        splitIndex = MAX_LENGTH;
-      }
-      chunk = remaining.substring(0, splitIndex);
-      remaining = remaining.substring(splitIndex).trimStart();
-    }
-    await (channel as TextChannel).send(chunk);
-  }
-}
-
-export async function setDiscordTyping(channelId: string) {
-  const channel = await client.channels.fetch(channelId);
-  if (channel && channel.type === ChannelType.GuildText) {
-    await (channel as TextChannel).sendTyping();
-  }
-}
-
-export async function startDiscord(token: string): Promise<void> {
-  client.on('ready', () => {
-    console.log(`Discord bot logged in as ${client.user?.tag}`);
-    console.log(`Connected to ${client.guilds.cache.size} server(s)`);
-  });
-
-  await client.login(token);
-}
-
-export function getClient(): Client {
-  return client;
-}
-```
-
-### Step 3: Update src/index.ts
-
-This is the main orchestrator. Modify it to conditionally initialize channels based on environment configuration.
-
-1. Keep all existing WhatsApp code intact, but wrap WhatsApp initialization in a conditional check (e.g., `if (whatsappAuthExists())` or check for the WhatsApp auth state directory)
-2. Import from `src/channels/discord.ts`
-3. In the `main()` function, add conditional Discord initialization:
-   ```typescript
-   if (process.env.DISCORD_BOT_TOKEN) {
-     await startDiscord(process.env.DISCORD_BOT_TOKEN);
-     // Set up onMessage callback to persist incoming Discord messages to SQLite
-   }
-   ```
-4. Log which channels are active on startup (e.g., `"Channels active: discord"` or `"Channels active: whatsapp, discord"`)
-5. If neither channel is configured, log an error and exit
-6. In the message handler, detect which platform a message came from by checking the `platform` field on the message record
-7. Route outbound messages to the correct platform based on the group's registered platform:
-   - WhatsApp groups: Use existing `sock.sendMessage()` and `sock.sendPresenceUpdate()`
-   - Discord groups: Use `sendDiscordMessage(channelId, text)` and `setDiscordTyping(channelId)`
-8. Update group identification: WhatsApp uses JIDs (e.g., `123456@g.us`), Discord uses channel IDs (snowflake strings like `"1234567890123456789"`) — both are stored as strings, so the existing schema should accommodate both with the addition of a `platform` discriminator
-
-### Step 4: Update src/db.ts
-
-Modify the database schema to accommodate Discord alongside WhatsApp:
-
-1. The `chats` table: Add a `platform` column (`'whatsapp' | 'discord'`) to distinguish between channel types. The existing `jid` or identifier field can store Discord channel IDs as-is since both WhatsApp JIDs and Discord snowflake IDs are strings
-2. The `messages` table: Add a `platform` column (`'whatsapp' | 'discord'`). The `sender` field should store Discord user IDs for Discord messages. Add or update fields as needed:
-   - `sender_name` — Discord display name (already may exist)
-   - `channel_id` — Can hold either WhatsApp JID or Discord channel snowflake ID
-3. The `registered_groups` data: Each group entry should include a `platform` field so the orchestrator knows which channel to route outbound messages through
-
-**Important:** Run any schema migrations carefully. Back up `data/messages.db` before modifying. Use `ALTER TABLE` for existing databases or drop/recreate for fresh installs.
-
-### Step 5: Update src/router.ts
-
-Modify outbound message formatting to support both platforms:
-
-1. Add platform-aware formatting: WhatsApp and Discord both support Markdown-like syntax but with differences (e.g., WhatsApp uses `_italic_` while Discord uses `*italic*`). The router should check the group's platform and format accordingly
-2. For Discord messages, if the agent response contains very long content, the router should split it respecting Discord's 2000-character limit (delegate to `sendDiscordMessage` which handles splitting)
-3. Keep existing WhatsApp formatting logic intact for WhatsApp groups
-
-### Step 6: Update src/config.ts
-
-1. Update `TRIGGER_PATTERN`: If using bot mentions as the trigger, the pattern changes. If keeping a text trigger, update the default (e.g., from `@Andy` to whatever the user prefers)
-2. Add Discord-specific config constants if needed (e.g., `DISCORD_BOT_TOKEN` sourced from environment)
-
-### Step 7: Update IPC Handler
-
-In `src/index.ts` (or `src/ipc.ts`), the IPC watcher processes `send_message` actions from the container agent. Update the handler:
-
-1. Add platform-aware routing: Look up the group's registered platform and call either `sock.sendMessage(jid, { text })` for WhatsApp or `sendDiscordMessage(channelId, text)` for Discord
-2. If the target platform's channel is not active (e.g., a group is registered as WhatsApp but only Discord is running), log a warning rather than crashing
-3. Ensure the IPC message format carries the correct channel identifier for routing (WhatsApp JID or Discord channel ID)
-
-In `container/agent-runner/ipc-mcp.ts`, the `send_message` tool writes JSON to the IPC directory. The schema should use `channelId` (or keep the existing field name if you're doing a simple rename). No changes needed inside the container if the field names are kept compatible.
-
-### Step 8: Update Container and Environment
-
-1. Add `DISCORD_BOT_TOKEN` to the environment. Store it in a `.env` file or export it in the shell. **Never commit the token to git.**
-2. Update `.gitignore` to include `.env` if not already present
-3. If the setup skill or systemd service template exists, update it to include the Discord token in the environment
-4. Document the runtime toggle behavior in a `.env.example` file:
-   ```bash
-   # Channel Configuration (set the tokens/auth for the channels you want active)
-   # Discord: Set this token to enable the Discord channel
-   DISCORD_BOT_TOKEN=
-   # WhatsApp: Enabled automatically when WhatsApp auth session exists in data/auth/
-   # At least one channel must be configured or the service will not start.
-   ```
-
-### Step 9: Update Authentication
-
-WhatsApp authentication (`src/auth.ts`) handles QR code pairing and session persistence. Discord authentication is simpler — it's just a bot token passed to `client.login()`.
-
-- Keep all existing WhatsApp auth intact — it serves as the implicit toggle for WhatsApp (auth session present = WhatsApp starts)
-- Add Discord token handling as a separate path — the bot token is read from the `DISCORD_BOT_TOKEN` environment variable (token present = Discord starts)
-- No additional auth state directory is needed for Discord since the bot token is stateless
-- The orchestrator should check both auth sources on startup and only initialize channels that are configured
-
-### Step 10: Update package.json
-
-1. Add `discord.js` to dependencies
-2. Keep all existing WhatsApp dependencies (`@whiskeysockets/baileys`, `@hapi/boom`, etc.)
-3. Verify the `build` and `dev` scripts still work after changes
-
-### Step 11: Update Documentation
-
-1. Update `README.md`:
-   - Update the architecture line to reflect both possible channels: `WhatsApp (baileys) and/or Discord (discord.js) → SQLite → Polling Loop → Container (Claude Agent SDK) → Response`
-   - Add Discord bot setup instructions alongside existing WhatsApp instructions
-   - Add usage examples showing Discord @mentions or trigger patterns
-   - Document the runtime channel toggle: which channels are active depends on environment configuration, not code changes
-2. Update `CLAUDE.md` to document the multi-channel architecture and the `platform` field on groups
-3. Note in documentation that each group is tied to a specific platform — a Discord channel group routes through Discord, a WhatsApp group routes through WhatsApp
-4. Document the `.env.example` file and explain that operators enable channels by configuring their credentials (Discord bot token, WhatsApp auth session)
-
-### Step 12: Service Management (Linux/systemd)
-
-If the user is deploying on Linux with systemd (not macOS launchd):
-
-1. Create a systemd service file at `/etc/systemd/system/nanoclaw.service` (or user-level equivalent):
-
-```ini
-[Unit]
-Description=NanoClaw AI Assistant
-After=network-online.target docker.service
-Wants=network-online.target
-
-[Service]
-Type=simple
-User=<username>
-WorkingDirectory=/path/to/nanoclaw
-ExecStart=/usr/bin/node dist/index.js
-Restart=always
-RestartSec=10
-Environment=NODE_ENV=production
-EnvironmentFile=/path/to/nanoclaw/.env
-
-[Install]
-WantedBy=multi-user.target
-```
-
-2. Enable and start: `systemctl enable nanoclaw && systemctl start nanoclaw`
-3. View logs: `journalctl -u nanoclaw -f`
-
-## Testing
-
-After implementation, verify:
-
-**Build and startup:**
-1. `npm run build` — TypeScript compiles without errors
-2. With only `DISCORD_BOT_TOKEN` set (no WhatsApp auth): Bot starts, connects to Discord, logs "ready" with the bot username, and logs that only the Discord channel is active
-3. With only WhatsApp auth (no `DISCORD_BOT_TOKEN`): Bot starts with WhatsApp only — original behavior is preserved
-4. With both configured: Both channels start and are logged as active
-5. With neither configured: Bot logs an error and exits
-
-**Discord functionality:**
-6. Send a message mentioning the bot in a test channel — verify it appears in SQLite with `platform: 'discord'`
-7. Verify the agent container spawns and returns a response
-8. Verify the response is posted back to the correct Discord channel
-9. Test typing indicator appears while the agent is processing
-10. Test long responses are split correctly at the 2000-character boundary
-11. Test scheduled tasks send messages to the correct Discord channel
-12. Verify group isolation — agent in one channel cannot access another channel's filesystem
-13. Test the main channel's admin commands (register group, list tasks, etc.)
-
-**Cross-platform (if both channels are active):**
-14. **WhatsApp regression:** Verify existing WhatsApp functionality still works — send a WhatsApp message and confirm it is processed and responded to correctly
-15. Test that scheduled tasks route to the correct platform based on the group's registered channel type
-16. Verify a WhatsApp group and a Discord channel can operate simultaneously without interference
-
-## Rollback
-
-If something goes wrong with the Discord integration:
+### Apply the skill
 
 ```bash
-git stash  # or git checkout .
-npm install  # restore original dependencies
+npx tsx scripts/apply-skill.ts .claude/skills/add-discord
+```
+
+This deterministically:
+- Adds `src/channels/discord.ts` (DiscordChannel class implementing Channel interface)
+- Adds `src/channels/discord.test.ts` (unit tests with discord.js mock)
+- Three-way merges Discord support into `src/index.ts` (multi-channel support, findChannel routing)
+- Three-way merges Discord config into `src/config.ts` (DISCORD_BOT_TOKEN, DISCORD_ONLY exports)
+- Three-way merges updated routing tests into `src/routing.test.ts`
+- Installs the `discord.js` npm dependency
+- Updates `.env.example` with `DISCORD_BOT_TOKEN` and `DISCORD_ONLY`
+- Records the application in `.nanoclaw/state.yaml`
+
+If the apply reports merge conflicts, read the intent files:
+- `modify/src/index.ts.intent.md` — what changed and invariants for index.ts
+- `modify/src/config.ts.intent.md` — what changed for config.ts
+
+### Validate code changes
+
+```bash
+npm test
 npm run build
 ```
 
-Since this skill adds Discord as a runtime-togglable channel without removing WhatsApp, you can also simply unset `DISCORD_BOT_TOKEN` from your environment to disable Discord without reverting any code. The WhatsApp channel will continue to function independently.
+All tests must pass (including the new Discord tests) and build must be clean before proceeding.
+
+## Phase 3: Setup
+
+### Create Discord Bot (if needed)
+
+If the user doesn't have a bot token, tell them:
+
+> I need you to create a Discord bot:
+>
+> 1. Go to the [Discord Developer Portal](https://discord.com/developers/applications)
+> 2. Click **New Application** and give it a name (e.g., "Andy Assistant")
+> 3. Go to the **Bot** tab on the left sidebar
+> 4. Click **Reset Token** to generate a new bot token — copy it immediately (you can only see it once)
+> 5. Under **Privileged Gateway Intents**, enable:
+>    - **Message Content Intent** (required to read message text)
+>    - **Server Members Intent** (optional, for member display names)
+> 6. Go to **OAuth2** > **URL Generator**:
+>    - Scopes: select `bot`
+>    - Bot Permissions: select `Send Messages`, `Read Message History`, `View Channels`
+>    - Copy the generated URL and open it in your browser to invite the bot to your server
+
+Wait for the user to provide the token.
+
+### Configure environment
+
+Add to `.env`:
+
+```bash
+DISCORD_BOT_TOKEN=<their-token>
+```
+
+If they chose to replace WhatsApp:
+
+```bash
+DISCORD_ONLY=true
+```
+
+Sync to container environment:
+
+```bash
+cp .env data/env/env
+```
+
+The container reads environment from `data/env/env`, not `.env` directly.
+
+### Build and restart
+
+```bash
+npm run build
+launchctl kickstart -k gui/$(id -u)/com.nanoclaw
+```
+
+## Phase 4: Registration
+
+### Get Channel ID
+
+Tell the user:
+
+> To get the channel ID for registration:
+>
+> 1. In Discord, go to **User Settings** > **Advanced** > Enable **Developer Mode**
+> 2. Right-click the text channel you want the bot to respond in
+> 3. Click **Copy Channel ID**
+>
+> The channel ID will be a long number like `1234567890123456`.
+
+Wait for the user to provide the channel ID (format: `dc:1234567890123456`).
+
+### Register the channel
+
+Use the IPC register flow or register directly. The channel ID, name, and folder name are needed.
+
+For a main channel (responds to all messages, uses the `main` folder):
+
+```typescript
+registerGroup("dc:<channel-id>", {
+  name: "<server-name> #<channel-name>",
+  folder: "main",
+  trigger: `@${ASSISTANT_NAME}`,
+  added_at: new Date().toISOString(),
+  requiresTrigger: false,
+});
+```
+
+For additional channels (trigger-only):
+
+```typescript
+registerGroup("dc:<channel-id>", {
+  name: "<server-name> #<channel-name>",
+  folder: "<folder-name>",
+  trigger: `@${ASSISTANT_NAME}`,
+  added_at: new Date().toISOString(),
+  requiresTrigger: true,
+});
+```
+
+## Phase 5: Verify
+
+### Test the connection
+
+Tell the user:
+
+> Send a message in your registered Discord channel:
+> - For main channel: Any message works
+> - For non-main: @mention the bot in Discord
+>
+> The bot should respond within a few seconds.
+
+### Check logs if needed
+
+```bash
+tail -f logs/nanoclaw.log
+```
+
+## Troubleshooting
+
+### Bot not responding
+
+1. Check `DISCORD_BOT_TOKEN` is set in `.env` AND synced to `data/env/env`
+2. Check channel is registered: `sqlite3 store/messages.db "SELECT * FROM registered_groups WHERE jid LIKE 'dc:%'"`
+3. For non-main channels: message must include trigger pattern (@mention the bot)
+4. Service is running: `launchctl list | grep nanoclaw`
+5. Verify the bot has been invited to the server (check OAuth2 URL was used)
+
+### Bot only responds to @mentions
+
+This is the default behavior for non-main channels (`requiresTrigger: true`). To change:
+- Update the registered group's `requiresTrigger` to `false`
+- Or register the channel as the main channel
+
+### Message Content Intent not enabled
+
+If the bot connects but can't read messages, ensure:
+1. Go to [Discord Developer Portal](https://discord.com/developers/applications)
+2. Select your application > **Bot** tab
+3. Under **Privileged Gateway Intents**, enable **Message Content Intent**
+4. Restart NanoClaw
+
+### Getting Channel ID
+
+If you can't copy the channel ID:
+- Ensure **Developer Mode** is enabled: User Settings > Advanced > Developer Mode
+- Right-click the channel name in the server sidebar > Copy Channel ID
+
+## After Setup
+
+The Discord bot supports:
+- Text messages in registered channels
+- Attachment descriptions (images, videos, files shown as placeholders)
+- Reply context (shows who the user is replying to)
+- @mention translation (Discord `<@botId>` → NanoClaw trigger format)
+- Message splitting for responses over 2000 characters
+- Typing indicators while the agent processes
