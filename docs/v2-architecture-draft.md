@@ -554,10 +554,9 @@ registerChannel('gmail', {
 
 The container runner reads registered mounts from the channel registry — no need to edit `container-runner.ts`.
 
-**Config pattern:** Instead of a central `config.ts` that every skill edits:
+**Config pattern:** Skills don't patch `config.ts` or `.env.example`. Skill-specific env vars are documented in the skill's SKILL.md — the setup process reads those instructions. Each module reads its own env vars directly:
 
 ```typescript
-// Each module reads its own config
 // channels/discord.ts
 const DISCORD_TOKEN = process.env.DISCORD_BOT_TOKEN;
 
@@ -566,6 +565,18 @@ const GMAIL_CREDS = process.env.GMAIL_CREDENTIALS_PATH;
 ```
 
 Shared config (DATA_DIR, TIMEZONE, MAX_CONCURRENT_CONTAINERS) stays in `config.ts`. Channel/skill-specific config stays in the module that uses it.
+
+### Code Style
+
+**Line width: 120 characters.** v1 uses the prettier default of 80, which breaks simple log calls and function signatures across 3-4 lines. v2 uses 120 — most statements fit on one line without sacrificing readability.
+
+**Concise logging.** v1 has 138 log calls, many spanning 3-4 lines due to pino's structured API + 80-char wrapping. v2 uses a thin wrapper so every log call is one line:
+
+```typescript
+log.info('IPC message sent', { chatJid, sourceGroup });
+log.warn('Unauthorized IPC attempt', { chatJid });
+log.error('Error processing', { file, err });
+```
 
 ### DB File Structure
 
