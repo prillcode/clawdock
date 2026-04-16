@@ -9,6 +9,11 @@ function log(msg: string): void {
   console.error(`[claude-provider] ${msg}`);
 }
 
+// Deferred SDK builtins that would sidestep nanoclaw's own scheduling.
+// Scheduling goes through mcp__nanoclaw__schedule_task so that tasks are
+// durable across sessions/restarts and gated by our pre-task script hook.
+const SDK_DISALLOWED_TOOLS = ['CronCreate', 'CronDelete', 'CronList', 'ScheduleWakeup'];
+
 // Tool allowlist for NanoClaw agent containers
 const TOOL_ALLOWLIST = [
   'Bash',
@@ -211,6 +216,7 @@ export class ClaudeProvider implements AgentProvider {
         resume: input.continuation,
         systemPrompt: instructions ? { type: 'preset' as const, preset: 'claude_code' as const, append: instructions } : undefined,
         allowedTools: TOOL_ALLOWLIST,
+        disallowedTools: SDK_DISALLOWED_TOOLS,
         env: this.env,
         permissionMode: 'bypassPermissions',
         allowDangerouslySkipPermissions: true,

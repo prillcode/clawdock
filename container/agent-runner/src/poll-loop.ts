@@ -4,6 +4,7 @@ import { writeMessageOut } from './db/messages-out.js';
 import { touchHeartbeat, clearStaleProcessingAcks } from './db/connection.js';
 import { getStoredSessionId, setStoredSessionId, clearStoredSessionId } from './db/session-state.js';
 import { formatMessages, extractRouting, categorizeMessage, type RoutingContext } from './formatter.js';
+import { applyPreTaskScripts } from './task-script.js';
 import type { AgentProvider, AgentQuery, ProviderEvent } from './providers/types.js';
 
 const POLL_INTERVAL_MS = 1000;
@@ -152,11 +153,25 @@ export async function runPollLoop(config: PollLoopConfig): Promise<void> {
       continue;
     }
 
+    // Pre-task scripts: for any task rows with a `script`, run it before the
+    // provider call. Scripts returning wakeAgent=false (or erroring) gate
+    // their own task row only — surviving messages still go to the agent.
+    const { keep, skipped } = await applyPreTaskScripts(normalMessages);
+    if (skipped.length > 0) {
+      markCompleted(skipped);
+      log(`Pre-task script skipped ${skipped.length} task(s): ${skipped.join(', ')}`);
+    }
+
+    if (keep.length === 0) {
+      log(`All ${normalMessages.length} non-command message(s) gated by script, skipping query`);
+      continue;
+    }
+
     // Format messages: passthrough commands get raw text (only if the
     // provider natively handles slash commands), others get XML.
-    const prompt = formatMessagesWithCommands(normalMessages, config.provider.supportsNativeSlashCommands);
+    const prompt = formatMessagesWithCommands(keep, config.provider.supportsNativeSlashCommands);
 
-    log(`Processing ${normalMessages.length} message(s), kinds: ${[...new Set(normalMessages.map((m) => m.kind))].join(',')}`);
+    log(`Processing ${keep.length} message(s), kinds: ${[...new Set(keep.map((m) => m.kind))].join(',')}`);
 
     const query = config.provider.query({
       prompt,
@@ -166,7 +181,8 @@ export async function runPollLoop(config: PollLoopConfig): Promise<void> {
     });
 
     // Process the query while concurrently polling for new messages
-    const processingIds = ids.filter((id) => !commandIds.includes(id));
+    const skippedSet = new Set(skipped);
+    const processingIds = ids.filter((id) => !commandIds.includes(id) && !skippedSet.has(id));
     try {
       const result = await processQuery(query, routing, config, processingIds);
       if (result.continuation && result.continuation !== continuation) {

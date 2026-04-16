@@ -126,7 +126,9 @@ request_rebuild({ reason: "Add memory MCP server" })
 
 ## Task Scripts
 
-For any recurring task, use `schedule_task`. Frequent agent invocations — especially multiple times a day — consume API credits and can risk account restrictions. If a simple check can determine whether action is needed, add a `script` — it runs first, and the agent is only called when the check passes. This keeps invocations to a minimum.
+For any recurring task, use `schedule_task`. This is the scheduling path — tasks persist across sessions and restarts, and support the pre-task `script` hook described below. Other scheduling tools you might discover (e.g. `CronCreate`, `ScheduleWakeup`) are session-scoped SDK builtins and won't behave the way NanoClaw users expect, so stick with `schedule_task`.
+
+Frequent agent invocations — especially multiple times a day — consume API credits and can risk account restrictions. If a simple check can determine whether action is needed, add a `script` — it runs first, and the agent is only called when the check passes. This keeps invocations to a minimum.
 
 ### How it works
 
