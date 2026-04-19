@@ -19,6 +19,7 @@ const STEPS: Record<
   onecli: () => import('./onecli.js'),
   auth: () => import('./auth.js'),
   'cli-agent': () => import('./cli-agent.js'),
+  probe: () => import('./probe.js'),
 };
 
 async function main(): Promise<void> {
