@@ -80,7 +80,8 @@ prompt_for_pasted() {
   local value
   echo
   echo "Paste your sk-ant-${prefix}… credential and press Enter."
-  echo "(Input is hidden for safety.)"
+  echo "Nothing will appear on the screen as you paste — that's intentional."
+  echo "Paste once, then just press Enter to submit."
   read -r -s -p "> " value </dev/tty
   echo
 
