@@ -4,10 +4,53 @@
  */
 import { execSync } from 'child_process';
 import path from 'path';
+import { setTimeout as sleep } from 'timers/promises';
 
 import { log } from '../src/log.js';
-import { commandExists } from './platform.js';
+import { commandExists, getPlatform } from './platform.js';
 import { emitStatus } from './status.js';
+
+function dockerRunning(): boolean {
+  try {
+    execSync('docker info', { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Try to start Docker if it's installed but idle. Poll for up to 60s.
+ * Returns true once `docker info` succeeds, false if we gave up.
+ */
+async function tryStartDocker(): Promise<boolean> {
+  const platform = getPlatform();
+  log.info('Docker not running — attempting to start', { platform });
+
+  try {
+    if (platform === 'macos') {
+      execSync('open -a Docker', { stdio: 'ignore' });
+    } else if (platform === 'linux') {
+      // Inherit stdio so sudo can prompt for a password if needed.
+      execSync('sudo systemctl start docker', { stdio: 'inherit' });
+    } else {
+      return false;
+    }
+  } catch (err) {
+    log.warn('Start command failed', { err });
+    return false;
+  }
+
+  for (let i = 0; i < 30; i++) {
+    await sleep(2000);
+    if (dockerRunning()) {
+      log.info('Docker is up');
+      return true;
+    }
+  }
+  log.warn('Docker did not become ready within 60s');
+  return false;
+}
 
 function parseArgs(args: string[]): { runtime: string } {
   // `--runtime` is still accepted for backwards compatibility with the /setup
@@ -54,19 +97,20 @@ export async function run(args: string[]): Promise<void> {
     process.exit(2);
   }
 
-  try {
-    execSync('docker info', { stdio: 'ignore' });
-  } catch {
-    emitStatus('SETUP_CONTAINER', {
-      RUNTIME: runtime,
-      IMAGE: image,
-      BUILD_OK: false,
-      TEST_OK: false,
-      STATUS: 'failed',
-      ERROR: 'runtime_not_available',
-      LOG: 'logs/setup.log',
-    });
-    process.exit(2);
+  if (!dockerRunning()) {
+    const started = await tryStartDocker();
+    if (!started) {
+      emitStatus('SETUP_CONTAINER', {
+        RUNTIME: runtime,
+        IMAGE: image,
+        BUILD_OK: false,
+        TEST_OK: false,
+        STATUS: 'failed',
+        ERROR: 'runtime_not_available',
+        LOG: 'logs/setup.log',
+      });
+      process.exit(2);
+    }
   }
 
   const buildCmd = 'docker build';
